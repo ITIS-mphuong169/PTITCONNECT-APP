@@ -1,0 +1,101 @@
+from django.db.models import Q
+from rest_framework import permissions, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.generics import get_object_or_404
+from rest_framework.response import Response
+
+from core.demo_auth import resolve_demo_user
+
+from .models import GroupMember, JoinRequest, StudyGroup
+from .serializers import JoinRequestSerializer, StudyGroupSerializer
+
+
+@api_view(["GET", "POST"])
+@permission_classes([permissions.AllowAny])
+def groups_api(request):
+    if request.method == "GET":
+        qs = StudyGroup.objects.all()
+        subject = request.query_params.get("subject", "").strip()
+        q = request.query_params.get("q", "").strip()
+        if subject:
+            qs = qs.filter(subject__iexact=subject)
+        if q:
+            qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q))
+        return Response(StudyGroupSerializer(qs[:100], many=True).data)
+
+    actor = resolve_demo_user(request)
+    title = (request.data.get("title") or "").strip()
+    subject = (request.data.get("subject") or "").strip()
+    description = (request.data.get("description") or "").strip()
+    max_members = int(request.data.get("max_members") or 5)
+    if not title or not subject or not description:
+        return Response(
+            {"detail": "title, subject, description required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    g = StudyGroup.objects.create(
+        owner=actor,
+        title=title,
+        subject=subject,
+        description=description,
+        max_members=max(2, min(max_members, 50)),
+    )
+    GroupMember.objects.get_or_create(group=g, user=actor)
+    return Response(StudyGroupSerializer(g).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def group_detail_api(request, pk):
+    g = get_object_or_404(StudyGroup, pk=pk)
+    return Response(StudyGroupSerializer(g).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def group_join_api(request, pk):
+    group = get_object_or_404(StudyGroup, pk=pk)
+    actor = resolve_demo_user(request)
+    if group.owner_id == actor.id:
+        return Response({"detail": "owner is already member"}, status=status.HTTP_400_BAD_REQUEST)
+    if GroupMember.objects.filter(group=group, user=actor).exists():
+        return Response({"detail": "already member"}, status=status.HTTP_400_BAD_REQUEST)
+    jr, created = JoinRequest.objects.get_or_create(group=group, user=actor, defaults={"status": "pending"})
+    if not created and jr.status != "pending":
+        jr.status = "pending"
+        jr.save()
+    return Response(JoinRequestSerializer(jr).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def group_join_requests_api(request, pk):
+    group = get_object_or_404(StudyGroup, pk=pk)
+    actor = resolve_demo_user(request)
+    if group.owner_id != actor.id:
+        return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+    pending = group.join_requests.filter(status="pending")
+    return Response(JoinRequestSerializer(pending, many=True).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def group_join_decide_api(request, pk, request_id):
+    group = get_object_or_404(StudyGroup, pk=pk)
+    actor = resolve_demo_user(request)
+    if group.owner_id != actor.id:
+        return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+    jr = get_object_or_404(JoinRequest, id=request_id, group=group)
+    action = (request.data.get("action") or "").lower()
+    if action == "approve":
+        if group.memberships.count() >= group.max_members:
+            return Response({"detail": "group full"}, status=status.HTTP_400_BAD_REQUEST)
+        jr.status = "approved"
+        jr.save()
+        GroupMember.objects.get_or_create(group=group, user=jr.user)
+    elif action == "reject":
+        jr.status = "rejected"
+        jr.save()
+    else:
+        return Response({"detail": "action must be approve or reject"}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(JoinRequestSerializer(jr).data)
