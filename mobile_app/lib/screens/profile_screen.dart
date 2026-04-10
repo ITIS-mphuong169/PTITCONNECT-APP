@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:mobile_app/core/app_api.dart';
+import 'package:mobile_app/core/app_session.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -11,22 +13,21 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  static const String _storageKey = 'mock_profile_v1';
-
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
   bool _loaded = false;
 
-  final _username = TextEditingController(text: 'phuongmgt');
-  final _email = TextEditingController(text: 'phuongmgt@stu.ptit.edu.vn');
+  final _username = TextEditingController();
+  final _email = TextEditingController();
   final _password = TextEditingController(text: '********');
-  final _fullName = TextEditingController(text: 'Mai Phuong');
-  final _classCode = TextEditingController(text: 'N4');
-  final _studentId = TextEditingController(text: 'B22DCCN123');
-  final _dob = TextEditingController(text: '01/09/2004');
-  final _major = TextEditingController(text: 'D22CNPM03');
-  final _cccd = TextEditingController(text: '0123456789');
-  final _address = TextEditingController(text: 'T2S, Mo Lao, Ha Dong');
+  final _fullName = TextEditingController();
+  final _classCode = TextEditingController();
+  final _studentId = TextEditingController();
+  final _dob = TextEditingController();
+  final _major = TextEditingController();
+  final _phone = TextEditingController();
+  final _address = TextEditingController();
+  final _gender = TextEditingController();
 
   @override
   void initState() {
@@ -44,42 +45,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _studentId.dispose();
     _dob.dispose();
     _major.dispose();
-    _cccd.dispose();
+    _phone.dispose();
     _address.dispose();
+    _gender.dispose();
     super.dispose();
   }
 
   Future<void> _loadProfile() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
-    if (raw != null && raw.isNotEmpty) {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      _fullName.text = (data['fullName'] ?? _fullName.text).toString();
-      _classCode.text = (data['classCode'] ?? _classCode.text).toString();
-      _studentId.text = (data['studentId'] ?? _studentId.text).toString();
-      _dob.text = (data['dob'] ?? _dob.text).toString();
-      _major.text = (data['major'] ?? _major.text).toString();
-      _cccd.text = (data['cccd'] ?? _cccd.text).toString();
-      _address.text = (data['address'] ?? _address.text).toString();
+    final uri = Uri.parse('${AppApi.users}/profile/').replace(
+      queryParameters: {'username': AppSession.username},
+    );
+    final res = await http.get(uri);
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      _username.text = (data['username'] ?? '').toString();
+      _email.text = (data['email'] ?? '').toString();
+      _fullName.text = (data['full_name'] ?? '').toString();
+      _classCode.text = (data['class_code'] ?? '').toString();
+      _studentId.text = (data['student_id'] ?? '').toString();
+      _dob.text = (data['date_of_birth'] ?? '').toString();
+      _major.text = (data['major'] ?? '').toString();
+      _phone.text = (data['phone'] ?? '').toString();
+      _address.text = (data['address'] ?? '').toString();
+      _gender.text = (data['gender'] ?? '').toString();
     }
     if (mounted) setState(() => _loaded = true);
   }
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _storageKey,
-      jsonEncode({
-        'fullName': _fullName.text.trim(),
-        'classCode': _classCode.text.trim(),
-        'studentId': _studentId.text.trim(),
-        'dob': _dob.text.trim(),
+    final res = await http.patch(
+      Uri.parse('${AppApi.users}/profile/'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': AppSession.username,
+        'full_name': _fullName.text.trim(),
+        'class_code': _classCode.text.trim(),
+        'student_id': _studentId.text.trim(),
+        'date_of_birth': _dob.text.trim(),
         'major': _major.text.trim(),
-        'cccd': _cccd.text.trim(),
+        'phone': _phone.text.trim(),
         'address': _address.text.trim(),
+        'gender': _gender.text.trim(),
       }),
     );
+    if (res.statusCode != 200) return;
     if (!mounted) return;
     setState(() => _isEditing = false);
     showDialog<void>(
@@ -128,7 +138,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _field(_studentId, 'Mã sinh viên'),
             _field(_dob, 'Ngày sinh'),
             _field(_major, 'Mã lớp'),
-            _field(_cccd, 'Số căn cước'),
+            _field(_phone, 'Số điện thoại'),
+            _field(_gender, 'Giới tính'),
             _field(_address, 'Địa chỉ hiện tại', maxLines: 2),
             const SizedBox(height: 16),
             ElevatedButton(

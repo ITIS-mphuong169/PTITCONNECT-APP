@@ -16,9 +16,12 @@ def groups_api(request):
     if request.method == "GET":
         qs = StudyGroup.objects.all()
         subject = request.query_params.get("subject", "").strip()
+        category = request.query_params.get("category", "").strip()
         q = request.query_params.get("q", "").strip()
         if subject:
             qs = qs.filter(subject__iexact=subject)
+        if category:
+            qs = qs.filter(category__iexact=category)
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q))
         return Response(StudyGroupSerializer(qs[:100], many=True).data)
@@ -26,7 +29,9 @@ def groups_api(request):
     actor = resolve_demo_user(request)
     title = (request.data.get("title") or "").strip()
     subject = (request.data.get("subject") or "").strip()
+    category = (request.data.get("category") or "").strip()
     description = (request.data.get("description") or "").strip()
+    avatar_url = (request.data.get("avatar_url") or "").strip()
     max_members = int(request.data.get("max_members") or 5)
     if not title or not subject or not description:
         return Response(
@@ -37,18 +42,40 @@ def groups_api(request):
         owner=actor,
         title=title,
         subject=subject,
+        category=category,
         description=description,
+        avatar_url=avatar_url,
         max_members=max(2, min(max_members, 50)),
     )
     GroupMember.objects.get_or_create(group=g, user=actor)
     return Response(StudyGroupSerializer(g).data, status=status.HTTP_201_CREATED)
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([permissions.AllowAny])
 def group_detail_api(request, pk):
     g = get_object_or_404(StudyGroup, pk=pk)
-    return Response(StudyGroupSerializer(g).data)
+    if request.method == "GET":
+        return Response(StudyGroupSerializer(g).data)
+
+    actor = resolve_demo_user(request)
+    if g.owner_id != actor.id:
+        return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "PATCH":
+        g.title = (request.data.get("title") or g.title).strip()
+        g.subject = (request.data.get("subject") or g.subject).strip()
+        g.category = (request.data.get("category") or g.category).strip()
+        g.description = (request.data.get("description") or g.description).strip()
+        g.avatar_url = (request.data.get("avatar_url") or g.avatar_url).strip()
+        max_members = request.data.get("max_members")
+        if max_members is not None:
+            g.max_members = max(2, min(int(max_members), 50))
+        g.save()
+        return Response(StudyGroupSerializer(g).data)
+
+    g.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["POST"])

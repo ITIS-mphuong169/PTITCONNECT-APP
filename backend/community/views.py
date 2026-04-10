@@ -53,11 +53,31 @@ def posts_api(request):
     return Response(PostSerializer(post).data, status=status.HTTP_201_CREATED)
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([permissions.AllowAny])
 def post_detail_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
-    return Response(PostSerializer(post).data)
+    if request.method == "GET":
+        return Response(PostSerializer(post).data)
+
+    actor = resolve_demo_user(request)
+    if post.author_id != actor.id:
+        return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "PATCH":
+        title = (request.data.get("title") or post.title).strip()
+        content = (request.data.get("content") or post.content).strip()
+        topic = (request.data.get("topic") or post.topic).strip()
+        if not title or not content:
+            return Response({"detail": "title and content are required"}, status=status.HTTP_400_BAD_REQUEST)
+        post.title = title
+        post.content = content
+        post.topic = topic
+        post.save(update_fields=["title", "content", "topic"])
+        return Response(PostSerializer(post).data)
+
+    post.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["POST"])

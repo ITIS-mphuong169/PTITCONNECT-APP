@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/screens/documents_screen.dart';
+import 'package:mobile_app/screens/groups_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -13,14 +15,9 @@ class CommunityScreen extends StatefulWidget {
 }
 
 class _CommunityScreenState extends State<CommunityScreen> {
-  static const List<String> _apiBases = [
-    AppApi.community,
-    'http://localhost:8000/api/community',
-  ];
-
   bool _loading = true;
   String? _errorMessage;
-  String _apiBase = _apiBases.first;
+  final String _apiBase = AppApi.community;
   final _searchController = TextEditingController();
   String _selectedTopic = 'all';
   List<_Post> _posts = [];
@@ -43,31 +40,17 @@ class _CommunityScreenState extends State<CommunityScreen> {
       _errorMessage = null;
     });
     try {
-      http.Response? successResponse;
-      String? lastError;
-      for (final base in _apiBases) {
-        try {
-          final uri = Uri.parse('$base/posts/').replace(
-            queryParameters: {
-              if (query.trim().isNotEmpty) 'q': query.trim(),
-              'username': AppSession.username,
-            },
-          );
-          final res = await http.get(uri);
-          if (res.statusCode == 200) {
-            _apiBase = base;
-            successResponse = res;
-            break;
-          }
-          lastError = 'status ${res.statusCode}';
-        } catch (e) {
-          lastError = e.toString();
-        }
+      final uri = Uri.parse('$_apiBase/posts/').replace(
+        queryParameters: {
+          if (query.trim().isNotEmpty) 'q': query.trim(),
+          'username': AppSession.username,
+        },
+      );
+      final res = await http.get(uri);
+      if (res.statusCode != 200) {
+        throw Exception('status ${res.statusCode}');
       }
-      if (successResponse == null) {
-        throw Exception(lastError ?? 'unknown');
-      }
-      final list = (jsonDecode(successResponse.body) as List<dynamic>)
+      final list = (jsonDecode(res.body) as List<dynamic>)
           .map((e) => _Post.fromJson(e as Map<String, dynamic>))
           .toList();
       if (!mounted) return;
@@ -80,31 +63,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
       setState(() {
         _loading = false;
         _errorMessage = e.toString();
-        // Fallback mock data so community page still usable when backend is down.
-        _posts = [
-          _Post(
-            id: 0,
-            author: 'P-Connect Bot',
-            content:
-                'Backend chưa sẵn sàng. Đây là dữ liệu tạm để bạn vẫn demo UI.',
-            likes: 0,
-            topic: 'System',
-            comments: [
-              _Comment(
-                author: 'System',
-                content: 'Bấm Thử lại khi backend chạy',
-              ),
-            ],
-          ),
-          _Post(
-            id: 1,
-            author: 'Mai Phương',
-            content: 'Mọi người chia sẻ tài liệu Flutter ở đây nhé!',
-            likes: 5,
-            topic: 'Flutter',
-            comments: [_Comment(author: 'Hồng Nhung', content: 'Ok luôn')],
-          ),
-        ];
+        _posts = [];
       });
     }
   }
@@ -228,7 +187,35 @@ class _CommunityScreenState extends State<CommunityScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cộng đồng')),
+      appBar: AppBar(
+        title: const Text('Cộng đồng'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DocumentsScreen()),
+                );
+              },
+              child: const Text('#Tài liệu'),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const GroupsScreen()),
+                );
+              },
+              child: const Text('#Nhóm'),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _createPost,
         backgroundColor: const Color(0xFFF33B6D),
@@ -443,7 +430,16 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Chi tiết bài viết')),
+      appBar: AppBar(
+        title: const Text('Chi tiết bài viết'),
+        actions: [
+          if (widget.post.author.toLowerCase() == widget.username.toLowerCase())
+            IconButton(
+              onPressed: _editPost,
+              icon: const Icon(Icons.edit_outlined),
+            ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -529,6 +525,56 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
       ),
     );
   }
+
+  Future<void> _editPost() async {
+    final ctl = TextEditingController(text: widget.post.content);
+    final topicCtl = TextEditingController(text: widget.post.topic);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Chỉnh sửa bài viết'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ctl,
+              maxLines: 4,
+              decoration: const InputDecoration(labelText: 'Nội dung'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: topicCtl,
+              decoration: const InputDecoration(labelText: 'Category'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Lưu')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final content = ctl.text.trim();
+    final topic = topicCtl.text.trim();
+    final title = content.length > 60 ? '${content.substring(0, 60)}...' : content;
+    final res = await http.patch(
+      Uri.parse('${widget.apiBase}/posts/${widget.post.id}/'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': widget.username,
+        'title': title,
+        'content': content,
+        'topic': topic,
+      }),
+    );
+    if (res.statusCode == 200) {
+      setState(() {
+        widget.post.content = content;
+        widget.post.topic = topic;
+      });
+    }
+  }
 }
 
 class _Post {
@@ -543,8 +589,8 @@ class _Post {
 
   final int id;
   final String author;
-  final String content;
-  final String topic;
+  String content;
+  String topic;
   int likes;
   bool isLiked = false;
   bool isSaved = false;

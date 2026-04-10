@@ -6,7 +6,9 @@ class StudyGroup(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="owned_groups")
     title = models.CharField(max_length=255)
     subject = models.CharField(max_length=100)
+    category = models.CharField(max_length=100, blank=True)
     description = models.TextField()
+    avatar_url = models.URLField(blank=True)
     max_members = models.IntegerField(default=5)
     created_at = models.DateTimeField(auto_now_add=True)
 
