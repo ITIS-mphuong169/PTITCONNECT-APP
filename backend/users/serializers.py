@@ -45,7 +45,27 @@ class ProfileSerializer(serializers.ModelSerializer):
 class FriendRequestSerializer(serializers.ModelSerializer):
     from_username = serializers.CharField(source="from_user.username", read_only=True)
     to_username = serializers.CharField(source="to_user.username", read_only=True)
+    from_profile = serializers.SerializerMethodField()
+    to_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = FriendRequest
-        fields = ["id", "from_username", "to_username", "status", "created_at"]
+        fields = [
+            "id",
+            "from_username",
+            "to_username",
+            "from_profile",
+            "to_profile",
+            "status",
+            "created_at",
+        ]
+
+    def _profile_data(self, user):
+        profile, _ = Profile.objects.get_or_create(user=user)
+        return ProfileSerializer(profile).data
+
+    def get_from_profile(self, obj):
+        return self._profile_data(obj.from_user)
+
+    def get_to_profile(self, obj):
+        return self._profile_data(obj.to_user)

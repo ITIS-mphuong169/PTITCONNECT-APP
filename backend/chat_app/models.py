@@ -10,6 +10,7 @@ class Conversation(models.Model):
         User, on_delete=models.CASCADE, related_name="conversations_as_user2"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
@@ -29,6 +30,7 @@ class Message(models.Model):
     )
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages_sent")
     content = models.TextField()
+    is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
