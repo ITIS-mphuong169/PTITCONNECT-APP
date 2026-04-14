@@ -8,39 +8,56 @@ class AdminModerationScreen extends StatefulWidget {
 }
 
 class _AdminModerationScreenState extends State<AdminModerationScreen> {
-  // --- DATA BÀI VIẾT (Giữ nguyên như cũ) ---
-  List<Map<String, String>> posts = [
-    {
-      'id': '1', 
-      'author': 'chill guy PTIT', 
-      'time': '2h trước',
-      'content': 'Nay ăn thử bát salad dưới canteen xịn phết mọi người ạ.'
-    },
-    {
-      'id': '2', 
-      'author': 'Nguyễn Văn A', 
-      'time': '3h trước',
-      'content': 'Góc chia sẻ tài liệu ôn thi môn Kỹ nghệ phần mềm.'
-    },
-  ];
+  // --- DATA TAB 1: NGƯỜI DÙNG VI PHẠM (100 MOCK DATA) ---
+  List<Map<String, dynamic>> violatingUsers = List.generate(100, (index) {
+    final types = ['Ngôn từ thù ghét', 'Spam/Lừa đảo', 'Quấy rối', 'Giả mạo'];
+    final reasons = [
+      'Sử dụng từ ngữ phản cảm, xúc phạm trong bình luận.',
+      'Gửi hàng loạt tin nhắn chứa link lừa đảo trúng thưởng.',
+      'Bắt nạt, công kích cá nhân sinh viên khác trên diễn đàn.',
+      'Sử dụng hình ảnh và tên của giảng viên để tạo tài khoản ảo.'
+    ];
+    final contents = [
+      'Bình luận: "Trường dạy chán quá, giảng viên toàn bọn..."',
+      'Bài viết: "Click ngay link này để nhận 500k miễn phí: http://link-scam.xyz"',
+      'Bình luận: "Mày ngu thế này học PTIT làm gì cho tốn tiền?"',
+      'Hồ sơ: Tên hiển thị "TS. Nguyễn Văn X", ảnh đại diện copy từ website trường.'
+    ];
 
-  // --- DATA NGƯỜI DÙNG VI PHẠM (Thiết kế mới) ---
-  List<Map<String, dynamic>> violatingUsers = [
-    {
-      'id': 'U001',
-      'name': 'Nguyễn Văn A',
-      'reason': 'Sử dụng ngôn từ không phù hợp trong bình luận.',
-      'violationType': 'Ngôn từ thù ghét',
-      'avatar': 'https://picsum.photos/200?random=10',
-    },
-    {
-      'id': 'U002',
-      'name': 'Trần Thị B',
-      'reason': 'Đăng tải nội dung spam quảng cáo nhiều lần.',
-      'violationType': 'Spam',
-      'avatar': 'https://picsum.photos/200?random=11',
-    },
-  ];
+    int typeIndex = index % 4;
+
+    return {
+      'id': 'U${(index + 1).toString().padLeft(3, '0')}',
+      'name': 'Sinh viên số ${index + 1}',
+      'reason': reasons[typeIndex],
+      'violationType': types[typeIndex],
+      'avatar': 'https://picsum.photos/200?random=${index}',
+      'violatingContent': contents[typeIndex],
+    };
+  });
+
+  // --- DATA TAB 2: BÀI VIẾT VI PHẠM (100 MOCK DATA) ---
+  List<Map<String, dynamic>> violatingPosts = List.generate(100, (index) {
+    final types = ['Nội dung nhạy cảm', 'Vi phạm chính sách', 'Spam/Lừa đảo', 'Tin giả'];
+    final reasons = [
+      'Hình ảnh chứa nội dung nhạy cảm.',
+      'Chia sẻ tài liệu vi phạm bản quyền.',
+      'Quảng cáo dịch vụ cày thuê không được phép.',
+      'Đăng tin sai sự thật về lịch thi học kỳ.'
+    ];
+    
+    int typeIndex = index % 4;
+
+    return {
+      'id': 'P${(index + 1).toString().padLeft(3, '0')}',
+      'author': 'Người dùng số ${index + 1}',
+      'time': '${(index % 24) + 1}h trước',
+      'content': 'Đây là nội dung bài viết vi phạm số ${index + 1}. Bài viết này đã bị báo cáo vì vi phạm tiêu chuẩn cộng đồng của sinh viên PTIT.',
+      'reason': reasons[typeIndex],
+      'violationType': types[typeIndex],
+      'image': 'https://picsum.photos/400/250?random=${100 + index}',
+    };
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -51,246 +68,206 @@ class _AdminModerationScreenState extends State<AdminModerationScreen> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
-          centerTitle: true,
-          title: const Text(
-            'Quản trị hệ thống', 
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)
-          ),
+          toolbarHeight: 10,
           bottom: const TabBar(
-            labelColor: Color(0xFFFF3B5C),
+            labelColor: Colors.black,
             unselectedLabelColor: Colors.grey,
             indicatorColor: Color(0xFFFF3B5C),
+            indicatorWeight: 3,
+            indicatorSize: TabBarIndicatorSize.label,
+            labelStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             tabs: [
               Tab(text: "Người dùng vi phạm"),
-              Tab(text: "Bài viết chờ duyệt"),
+              Tab(text: "Bài viết vi phạm"),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            _buildUserViolationTab(), // Tab 1: Xử lý người dùng
-            _buildPostManagementTab(), // Tab 2: Xử lý bài viết (ĐÃ FIX LỖI)
+            _buildViolationList(isUser: true), // Tab xử lý người dùng
+            _buildViolationList(isUser: false), // Tab xử lý bài viết
           ],
         ),
       ),
     );
   }
 
-  // =========================================================================
-  // ==================== TAB 1: NGƯỜI DÙNG VI PHẠM ==========================
-  // =========================================================================
-
-  Widget _buildUserViolationTab() {
-    if (violatingUsers.isEmpty) {
-      return const Center(child: Text("Không có báo cáo vi phạm nào."));
+  // Giao diện danh sách vi phạm
+  Widget _buildViolationList({required bool isUser}) {
+    final list = isUser ? violatingUsers : violatingPosts;
+    
+    if (list.isEmpty) {
+      return const Center(child: Text("Hiện không có báo cáo vi phạm nào."));
     }
-    return ListView.builder(
-      itemCount: violatingUsers.length,
-      padding: const EdgeInsets.all(16),
-      itemBuilder: (context, index) => _buildUserViolationItem(index),
-    );
-  }
 
-  Widget _buildUserViolationItem(int index) {
-    final user = violatingUsers[index];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.only(bottom: 16),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ListView.builder(
+      itemCount: list.length,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      itemBuilder: (context, index) {
+        final item = list[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundImage: NetworkImage(user['avatar']),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(user['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text("Mã SV: ${user['id']}", style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF3B5C).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  user['violationType'], 
-                  style: const TextStyle(color: Color(0xFFFF3B5C), fontSize: 10, fontWeight: FontWeight.bold)
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(color: Colors.black87, fontSize: 14),
+              // Header: Thông tin đối tượng vi phạm
+              Row(
                 children: [
-                  const TextSpan(text: "Lý do: ", style: TextStyle(fontWeight: FontWeight.bold)),
-                  TextSpan(text: user['reason']),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundImage: NetworkImage(isUser ? item['avatar'] : 'https://picsum.photos/100?random=${index}'),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isUser ? item['name'] : item['author'], 
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)
+                        ),
+                        Text(
+                          isUser ? "ID: ${item['id']}" : item['time'], 
+                          style: const TextStyle(color: Colors.grey, fontSize: 12)
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Nhãn loại vi phạm (Tag)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF3B5C).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      item['violationType'],
+                      style: const TextStyle(color: Color(0xFFFF3B5C), fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(child: _actionButton("Cảnh cáo", Colors.orange, () => _handleUserAction("cảnh cáo", index))),
-              const SizedBox(width: 8),
-              Expanded(child: _actionButton("Khóa", const Color(0xFFFF3B5C), () => _handleUserAction("khóa", index))),
-              const SizedBox(width: 8),
-              Expanded(child: _actionButton("Bỏ qua", Colors.grey, () => _handleUserAction("bỏ qua", index))),
+
+              // Nội dung vi phạm
+              if (!isUser) ...[
+                // Dành cho Bài viết vi phạm
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text(item['content'], style: const TextStyle(fontSize: 14, color: Colors.black87)),
+                ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(item['image'], height: 180, width: double.infinity, fit: BoxFit.cover),
+                ),
+              ] else if (item.containsKey('violatingContent')) ...[
+                // Dành cho Người dùng vi phạm (Hiển thị chi tiết nội dung họ đã vi phạm)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Chi tiết nội dung vi phạm:", 
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "\"${item['violatingContent']}\"", 
+                        style: const TextStyle(fontSize: 14, fontStyle: FontStyle.italic, color: Colors.black87)
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Lý do báo cáo vi phạm
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: RichText(
+                  text: TextSpan(
+                    style: const TextStyle(color: Colors.black87, fontSize: 13),
+                    children: [
+                      const TextSpan(text: "Lý do báo cáo: ", style: TextStyle(fontWeight: FontWeight.bold)),
+                      TextSpan(text: item['reason']),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Nhóm nút thao tác (Pill Shape)
+              Row(
+                children: [
+                  _pillButton("Cảnh cáo", Colors.orange, () => _handleAction("cảnh cáo", index, isUser)),
+                  const SizedBox(width: 8),
+                  _pillButton(
+                    isUser ? "Khóa tài khoản" : "Xóa bài", 
+                    const Color(0xFFFF3B5C), 
+                    () => _handleAction(isUser ? "khóa" : "xóa", index, isUser)
+                  ),
+                  const SizedBox(width: 8),
+                  _pillButton("Bỏ qua", Colors.grey, () => _handleAction("bỏ qua", index, isUser)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1, thickness: 1, color: Color(0xFFF5F5F5)),
             ],
           ),
-        ],
+        );
+      },
+    );
+  }
+
+  // Widget nút bấm hình viên thuốc
+  Widget _pillButton(String text, Color color, VoidCallback onTap) {
+    return Expanded(
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          elevation: 0,
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+        ),
+        child: Text(
+          text, 
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
 
-  void _handleUserAction(String action, int index) {
+  // Logic xử lý hành động
+  void _handleAction(String action, int index, bool isUser) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text("Xác nhận $action?"),
-        content: Text("Bạn có chắc chắn muốn thực hiện hành động này đối với ${violatingUsers[index]['name']}?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Hủy")),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF3B5C)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => violatingUsers.removeAt(index));
-              _showAutoCloseDialog("${action[0].toUpperCase()}${action.substring(1)} thành công!");
-            }, 
-            child: const Text("Xác nhận", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // =========================================================================
-  // ==================== TAB 2: BÀI VIẾT CHỜ DUYỆT ==========================
-  // =========================================================================
-
-  Widget _buildPostManagementTab() {
-    if (posts.isEmpty) {
-      return const Center(child: Text("Không còn bài viết nào chờ duyệt"));
-    }
-    return ListView.builder(
-      itemCount: posts.length,
-      padding: const EdgeInsets.all(16),
-      itemBuilder: (context, index) => _buildPostItem(index),
-    );
-  }
-
-  Widget _buildPostItem(int index) {
-    final post = posts[index];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 20, 
-                backgroundColor: Colors.grey,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(post['author']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(post['time']!, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                ],
-              )
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Text(post['content']!),
-          ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              'https://picsum.photos/400/250?random=$index',
-              height: 200,
-              width: double.infinity,
-              fit: BoxFit.cover,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _actionButton("Duyệt", Colors.green, () => _confirmPostAction("Duyệt", index)),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: _actionButton("Xóa", const Color(0xFFFF3B5C), () => _confirmPostAction("Xóa", index)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 15),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
-        ],
-      ),
-    );
-  }
-
-  void _confirmPostAction(String action, int index) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text('Bạn có chắc muốn $action?', textAlign: TextAlign.center),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text("Xác nhận $action?", textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => posts.removeAt(index));
-              _showAutoCloseDialog("$action thành công!");
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Chắc chắn', style: TextStyle(color: Colors.white)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Hủy', style: TextStyle(color: Colors.white)),
-          ),
+          _pillButton("Chắc chắn", Colors.green, () {
+            Navigator.pop(ctx);
+            setState(() {
+              if (isUser) {
+                violatingUsers.removeAt(index);
+              } else {
+                violatingPosts.removeAt(index);
+              }
+            });
+            _showAutoCloseDialog("Đã thực hiện $action thành công!");
+          }),
+          _pillButton("Hủy", const Color(0xFFFF3B5C), () => Navigator.pop(ctx)),
         ],
       ),
-    );
-  }
-
-  // =========================================================================
-  // ========================== HÀM TIỆN ÍCH DÙNG CHUNG ======================
-  // =========================================================================
-
-  Widget _actionButton(String text, Color color, VoidCallback onTap) {
-    return ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-      ),
-      child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -299,14 +276,12 @@ class _AdminModerationScreenState extends State<AdminModerationScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Text(message, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
     Future.delayed(const Duration(seconds: 1), () {
-      if(mounted) {
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     });
   }
 }
