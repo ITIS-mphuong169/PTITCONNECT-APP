@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/screens/admin_dashboard_screen.dart';
 import 'package:mobile_app/screens/home_shell_screen.dart';
 import 'package:mobile_app/screens/microsoft_login_webview_screen.dart';
 
@@ -29,30 +30,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _onLoginPressed() async {
     if (!_formKey.currentState!.validate()) return;
-    final email = _emailController.text.trim();
-    final derivedUsername = email.split('@').first.trim().toLowerCase();
-    if (derivedUsername.isNotEmpty) {
-      AppSession.username = derivedUsername;
-    }
+    
+    final email = _emailController.text.trim().toLowerCase();
+    final derivedUsername = email.split('@').first;
+    
+    // Lưu username vào session như cũ
+    AppSession.username = derivedUsername;
 
-    bool success = false;
-    if (_useMockLogin) {
-      await Future<void>.delayed(const Duration(milliseconds: 450));
-      success = true;
-    } else {
-      final result = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MicrosoftLoginWebViewScreen(
-            emailHint: _emailController.text.trim(),
-          ),
-        ),
-      );
-      success = result == true;
-    }
+    // Giả lập quá trình đăng nhập (Mock Login)
+    await Future<void>.delayed(const Duration(milliseconds: 450));
 
     if (!mounted) return;
-    if (success) {
+
+    // LOGIC PHÂN LUỒNG:
+    // Nếu email là admin@stu.ptit.edu.vn hoặc có chứa từ 'admin' ở tiền tố
+    if (email == 'admin@stu.ptit.edu.vn' || derivedUsername.startsWith('admin')) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+      );
+    } else {
+      // Các trường hợp sinh viên thông thường
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeShellScreen()),
