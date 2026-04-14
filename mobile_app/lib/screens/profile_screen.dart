@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:mobile_app/core/app_api.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
+
+import 'package:mobile_app/core/app_api.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? targetUsername;
@@ -14,10 +16,18 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
+Widget _buildAvatar(String name, {double radius = 34}) {
+  return initialsAvatar(name, radius: radius);
+}
+
 class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
+
   bool _isEditing = false;
   bool _loaded = false;
+
+  // ⭐ QUAN TRỌNG
+  Map<String, dynamic>? _profileData;
 
   final _username = TextEditingController();
   final _email = TextEditingController();
@@ -36,7 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    _loadProfile(); // ✅ FIX CHÍNH
   }
 
   @override
@@ -68,6 +78,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
 
+        // ⭐ QUAN TRỌNG
+        _profileData = data;
+
         _username.text = (data['username'] ?? '').toString();
         _email.text = (data['email'] ?? '').toString();
         _fullName.text = (data['full_name'] ?? '').toString();
@@ -79,10 +92,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _address.text = (data['address'] ?? '').toString();
         _gender.text = (data['gender'] ?? '').toString();
       } else {
-        _showError('Không tải được thông tin tài khoản (${res.statusCode}).');
+        _showError('Không tải được thông tin (${res.statusCode})');
       }
     } catch (e) {
-      _showError('Có lỗi khi tải hồ sơ: $e');
+      _showError('Lỗi load profile: $e');
     } finally {
       if (mounted) {
         setState(() => _loaded = true);
@@ -113,32 +126,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
 
       if (res.statusCode == 200) {
-        if (!mounted) return;
         setState(() => _isEditing = false);
 
-        showDialog<void>(
+        showDialog(
           context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Thành công'),
-            content: const Text('Cập nhật thông tin thành công'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
+          builder: (_) => const AlertDialog(
+            title: Text('Thành công'),
+            content: Text('Cập nhật thành công'),
           ),
         );
       } else {
-        _showError('Cập nhật thất bại (${res.statusCode}).');
+        _showError('Cập nhật thất bại');
       }
     } catch (e) {
-      _showError('Có lỗi khi cập nhật hồ sơ: $e');
+      _showError('Lỗi update: $e');
     }
   }
 
   void _showError(String message) {
-    if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
@@ -152,46 +157,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isOwnProfile ? 'Thông tin tài khoản' : 'Hồ sơ người dùng'),
+        title: Text(_isOwnProfile ? 'Thông tin tài khoản' : 'Hồ sơ'),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Center(
-              child: CircleAvatar(
+            Center(
+              child: _buildAvatar(
+                _fullName.text.isEmpty ? _username.text : _fullName.text,
                 radius: 34,
-                backgroundColor: Color(0xFFF8D5E0),
-                child: Icon(Icons.person, size: 34),
               ),
             ),
-            const SizedBox(height: 18),
-            _sectionLabel('Tài khoản'),
-            _field(_username, 'Username', enabled: false),
-            _field(_email, 'Email edu', enabled: false),
-            if (_isOwnProfile) _field(_password, 'Mật khẩu', enabled: false),
-            const SizedBox(height: 10),
-            _sectionLabel('Thông tin sinh viên'),
-            _field(_fullName, 'Họ và tên'),
-            _field(_classCode, 'Lớp học'),
-            _field(_studentId, 'Mã sinh viên'),
-            _field(_dob, 'Ngày sinh'),
-            _field(_major, 'Chuyên ngành'),
-            _field(_phone, 'Số điện thoại'),
-            _field(_gender, 'Giới tính'),
-            _field(_address, 'Địa chỉ hiện tại', maxLines: 2),
+
             const SizedBox(height: 16),
+
+            _field(_username, 'Username', enabled: false),
+            _field(_email, 'Email', enabled: false),
+
+            _field(_fullName, 'Họ tên'),
+            _field(_classCode, 'Lớp'),
+            _field(_studentId, 'Mã SV'),
+            _field(_dob, 'Ngày sinh'),
+            _field(_major, 'Ngành'),
+            _field(_phone, 'SĐT'),
+            _field(_gender, 'Giới tính'),
+            _field(_address, 'Địa chỉ'),
+
+            const SizedBox(height: 16),
+
             if (_isOwnProfile)
               ElevatedButton(
                 onPressed: _isEditing
                     ? _saveProfile
                     : () => setState(() => _isEditing = true),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  backgroundColor: const Color(0xFFF33B6D),
-                  foregroundColor: Colors.white,
-                ),
                 child: Text(_isEditing ? 'Lưu' : 'Chỉnh sửa'),
               ),
           ],
@@ -200,42 +200,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _sectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-
-  Widget _field(
-    TextEditingController controller,
-    String label, {
-    bool enabled = true,
-    int maxLines = 1,
-  }) {
+  Widget _field(TextEditingController c, String label, {bool enabled = true}) {
     final canEdit = _isOwnProfile && enabled && _isEditing;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextFormField(
-        controller: controller,
+        controller: c,
         enabled: canEdit,
-        maxLines: maxLines,
-        validator: (value) {
-          if (!canEdit) return null;
-          if ((value ?? '').trim().isEmpty) {
-            return 'Không được để trống';
-          }
-          return null;
-        },
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          filled: true,
-          fillColor: canEdit ? Colors.white : const Color(0xFFF7F7F7),
+          border: OutlineInputBorder(),
         ),
       ),
     );

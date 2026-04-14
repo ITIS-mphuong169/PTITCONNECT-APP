@@ -5,9 +5,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/app_api.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/messages_screen.dart';
 import 'package:mobile_app/screens/profile_screen.dart';
+
+Widget _avatar(String name, {double radius = 20}) {
+  return initialsAvatar(name, radius: radius);
+}
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key, this.initialTab = 0});
@@ -35,6 +40,7 @@ class _FriendsScreenState extends State<FriendsScreen>
   final TextEditingController _searchController = TextEditingController();
   List<_ProfileMini> _searchResults = [];
   bool _searching = false;
+  final Set<String> _hiddenSuggestionUsernames = <String>{};
 
   final TextEditingController _friendSearchController =
       TextEditingController();
@@ -112,6 +118,7 @@ class _FriendsScreenState extends State<FriendsScreen>
 
       _suggestions = ((jsonDecode(results[3].body)['results'] ?? []) as List)
           .map((e) => _ProfileMini.fromJson(e))
+          .where((e) => !_hiddenSuggestionUsernames.contains(e.username))
           .toList();
 
       setState(() => _loading = false);
@@ -136,9 +143,9 @@ class _FriendsScreenState extends State<FriendsScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const CircleAvatar(
+              _avatar(
+                profile.fullName.isEmpty ? profile.username : profile.fullName,
                 radius: 34,
-                child: Icon(Icons.person, size: 34),
               ),
               const SizedBox(height: 12),
               Text(
@@ -291,6 +298,7 @@ class _FriendsScreenState extends State<FriendsScreen>
         final results = (body['results'] as List<dynamic>? ?? [])
             .map((e) => _ProfileMini.fromJson(e as Map<String, dynamic>))
             .where((e) => !blockedUsernames.contains(e.username))
+            .where((e) => !_hiddenSuggestionUsernames.contains(e.username))
             .toList();
 
         setState(() {
@@ -307,6 +315,27 @@ class _FriendsScreenState extends State<FriendsScreen>
         _searching = false;
       });
     }
+  }
+
+  Widget _actionCircleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color background,
+    Color iconColor = Colors.white,
+  }) {
+    return Material(
+      color: background,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Icon(icon, size: 18, color: iconColor),
+        ),
+      ),
+    );
   }
 
   Widget _buildFriendsTab() {
@@ -358,8 +387,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                   itemBuilder: (_, i) {
                     final f = filteredFriends[i];
                     return ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person),
+                      leading: _avatar(
+                        f.fullName.isEmpty ? f.username : f.fullName,
                       ),
                       title: Text(
                         f.fullName,
@@ -368,9 +397,10 @@ class _FriendsScreenState extends State<FriendsScreen>
                         ),
                       ),
                       subtitle: Text('${f.studentId} • ${f.email}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.message),
-                        onPressed: () {
+                      trailing: _actionCircleButton(
+                        icon: Icons.message_rounded,
+                        background: const Color(0xFFE53935),
+                        onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -443,7 +473,9 @@ class _FriendsScreenState extends State<FriendsScreen>
                       itemBuilder: (_, i) {
                         final s = items[i];
                         return ListTile(
-                          leading: const CircleAvatar(child: Icon(Icons.person)),
+                          leading: _avatar(
+                            s.fullName.isEmpty ? s.username : s.fullName,
+                          ),
                           title: Text(
                             s.fullName,
                             style: const TextStyle(fontWeight: FontWeight.w700),
@@ -452,20 +484,27 @@ class _FriendsScreenState extends State<FriendsScreen>
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (!hasQuery)
-                                IconButton(
-                                  icon: const Icon(Icons.close),
-                                  onPressed: () {
-                                    setState(() {
-                                      _suggestions.removeWhere(
-                                        (e) => e.username == s.username,
-                                      );
-                                    });
-                                  },
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.person_add),
-                                onPressed: () => _sendRequest(s.username),
+                              _actionCircleButton(
+                                icon: Icons.close_rounded,
+                                background: Colors.white,
+                                iconColor: const Color(0xFF4E81FF),
+                                onTap: () {
+                                  setState(() {
+                                    _hiddenSuggestionUsernames.add(s.username);
+                                    _suggestions.removeWhere(
+                                      (e) => e.username == s.username,
+                                    );
+                                    _searchResults.removeWhere(
+                                      (e) => e.username == s.username,
+                                    );
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              _actionCircleButton(
+                                icon: Icons.person_add_alt_1_rounded,
+                                background: const Color(0xFF4E81FF),
+                                onTap: () => _sendRequest(s.username),
                               ),
                             ],
                           ),
@@ -504,8 +543,10 @@ class _FriendsScreenState extends State<FriendsScreen>
                   children: _requests
                       .map(
                         (e) => ListTile(
-                          leading: const CircleAvatar(
-                            child: Icon(Icons.person),
+                          leading: _avatar(
+                            e.profile.fullName.isEmpty
+                                ? e.profile.username
+                                : e.profile.fullName,
                           ),
                           title: Text(
                             e.profile.fullName,
@@ -517,13 +558,17 @@ class _FriendsScreenState extends State<FriendsScreen>
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () => _decide(e, 'reject'),
+                              _actionCircleButton(
+                                icon: Icons.close_rounded,
+                                background: Colors.white,
+                                iconColor: const Color(0xFF4E81FF),
+                                onTap: () => _decide(e, 'reject'),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.check),
-                                onPressed: () => _decide(e, 'accept'),
+                              const SizedBox(width: 8),
+                              _actionCircleButton(
+                                icon: Icons.check_rounded,
+                                background: const Color(0xFF4E81FF),
+                                onTap: () => _decide(e, 'accept'),
                               ),
                             ],
                           ),
@@ -566,6 +611,7 @@ class _ProfileMini {
   final String email;
   final String classCode;
   final String major;
+  final String avatar;
 
   _ProfileMini({
     required this.username,
@@ -574,6 +620,7 @@ class _ProfileMini {
     required this.email,
     required this.classCode,
     required this.major,
+    required this.avatar,
   });
 
   factory _ProfileMini.fromJson(Map<String, dynamic> json) {
@@ -584,6 +631,7 @@ class _ProfileMini {
       email: json['email'] ?? '',
       classCode: json['class_code'] ?? '',
       major: json['major'] ?? '',
+      avatar: json['avatar_url'] ?? json['avatar'] ?? '',
     );
   }
 }

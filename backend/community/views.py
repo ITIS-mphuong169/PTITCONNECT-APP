@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import requests
 from bs4 import BeautifulSoup
 from django.db.models import Q
+from django.contrib.auth.models import User
 from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import get_object_or_404
@@ -11,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.demo_auth import resolve_demo_user
+from notifications_app.services import create_notification
 
 from .models import Comment, Post, PostLike, SavedPost
 from .serializers import CommentSerializer, PostSerializer
@@ -40,7 +42,7 @@ def posts_api(request):
             queryset = queryset.filter(
                 Q(title__icontains=keyword) | Q(content__icontains=keyword) | Q(topic__icontains=keyword)
             )
-        serializer = PostSerializer(queryset[:50], many=True)
+        serializer = PostSerializer(queryset[:50], many=True, context={"request": request})
         return Response(serializer.data)
 
     actor = resolve_demo_user(request)
@@ -50,7 +52,17 @@ def posts_api(request):
     if not title or not content:
         return Response({"detail": "title and content are required"}, status=status.HTTP_400_BAD_REQUEST)
     post = Post.objects.create(author=actor, title=title, content=content, topic=topic)
-    return Response(PostSerializer(post).data, status=status.HTTP_201_CREATED)
+    receivers = User.objects.exclude(id=actor.id).only("id", "username")
+    for receiver in receivers:
+        create_notification(
+            user=receiver,
+            title="Bài viết mới",
+            content=f"{actor.username} vừa đăng một bài viết mới.",
+            notification_type="post_new",
+            target_username=actor.username,
+            post_id=post.id,
+        )
+    return Response(PostSerializer(post, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET", "PATCH", "DELETE"])
@@ -58,7 +70,7 @@ def posts_api(request):
 def post_detail_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
     if request.method == "GET":
-        return Response(PostSerializer(post).data)
+        return Response(PostSerializer(post, context={"request": request}).data)
 
     actor = resolve_demo_user(request)
     if post.author_id != actor.id:
@@ -74,7 +86,7 @@ def post_detail_api(request, post_id):
         post.content = content
         post.topic = topic
         post.save(update_fields=["title", "content", "topic"])
-        return Response(PostSerializer(post).data)
+        return Response(PostSerializer(post, context={"request": request}).data)
 
     post.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -89,7 +101,16 @@ def post_comment_api(request, post_id):
     if not content:
         return Response({"detail": "content is required"}, status=status.HTTP_400_BAD_REQUEST)
     comment = Comment.objects.create(post=post, author=actor, content=content)
-    return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+    if post.author_id != actor.id:
+        create_notification(
+            user=post.author,
+            title="Bài viết của bạn có bình luận mới",
+            content=f"{actor.username} đã bình luận về bài viết của bạn.",
+            notification_type="post_comment",
+            target_username=actor.username,
+            post_id=post.id,
+        )
+    return Response(CommentSerializer(comment, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
@@ -100,6 +121,15 @@ def post_react_api(request, post_id):
     like, created = PostLike.objects.get_or_create(post=post, user=actor)
     if not created:
         like.delete()
+    elif post.author_id != actor.id:
+        create_notification(
+            user=post.author,
+            title="Bài viết của bạn có lượt thích mới",
+            content=f"{actor.username} đã thích bài viết của bạn.",
+            notification_type="post_like",
+            target_username=actor.username,
+            post_id=post.id,
+        )
     return Response(
         {
             "liked": created,

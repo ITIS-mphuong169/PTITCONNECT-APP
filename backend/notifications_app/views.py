@@ -16,7 +16,7 @@ def notifications_api(request):
     me = resolve_demo_user(request)
     if request.method == "GET":
         qs = Notification.objects.filter(user=me)[:100]
-        return Response(NotificationSerializer(qs, many=True).data)
+        return Response(NotificationSerializer(qs, many=True, context={"request": request}).data)
     title = (request.data.get("title") or "").strip()
     content = (request.data.get("content") or "").strip()
     if not title or not content:
@@ -31,7 +31,7 @@ def notifications_api(request):
         post_id=request.data.get("post_id") or None,
         group_id=request.data.get("group_id") or None,
     )
-    return Response(NotificationSerializer(n).data, status=status.HTTP_201_CREATED)
+    return Response(NotificationSerializer(n, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
@@ -41,7 +41,7 @@ def notification_read_api(request, pk):
     n = get_object_or_404(Notification, pk=pk, user=me)
     n.is_read = True
     n.save(update_fields=["is_read"])
-    data = NotificationSerializer(n).data
+    data = NotificationSerializer(n, context={"request": request}).data
     notify_user(me.username, {"type": "notification_read", "data": data})
     return Response(data)
 

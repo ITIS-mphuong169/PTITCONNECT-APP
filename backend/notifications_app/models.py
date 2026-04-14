@@ -7,6 +7,7 @@ class Notification(models.Model):
         ("message", "Message"),
         ("friend_request", "Friend Request"),
         ("friend_accept", "Friend Accept"),
+        ("post_new", "Post New"),
         ("post_like", "Post Like"),
         ("post_comment", "Post Comment"),
         ("group", "Group"),

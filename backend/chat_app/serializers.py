@@ -18,6 +18,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     matched_message = serializers.SerializerMethodField()
+    matched_count = serializers.SerializerMethodField()
     last_message_time = serializers.SerializerMethodField()
 
     class Meta:
@@ -27,6 +28,7 @@ class ConversationSerializer(serializers.ModelSerializer):
             "peer_profile",
             "last_message",
             "matched_message",
+            "matched_count",
             "unread_count",
             "created_at",
             "updated_at",
@@ -62,6 +64,12 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_last_message_time(self, obj):
         last = obj.messages.order_by("-created_at").first()
         return getattr(last, "created_at", None)
+
+    def get_matched_count(self, obj):
+        query = (self.context.get("search_query") or "").strip()
+        if not query:
+            return 0
+        return obj.messages.filter(content__icontains=query).count()
 
     def get_unread_count(self, obj):
         user = self.context.get("user")

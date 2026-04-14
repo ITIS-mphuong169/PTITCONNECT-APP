@@ -20,6 +20,7 @@ class AppApi {
     return host.replaceFirst('http://', 'ws://');
   }
 
+  static String get baseOrigin => host;
   static String get users => '$host/api/users';
   static String get community => '$host/api/community';
   static String get documents => '$host/api/documents';

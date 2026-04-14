@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/app_api.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/community_screen.dart';
 import 'package:mobile_app/screens/friends_screen.dart';
@@ -20,7 +21,6 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _loading = true;
   List<_NotifyItem> _items = [];
-  final Set<String> _mutedTypes = <String>{};
   Timer? _timer;
   WebSocketChannel? _channel;
   StreamSubscription? _wsSub;
@@ -81,7 +81,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (res.statusCode == 200) {
         final list = (jsonDecode(res.body) as List<dynamic>)
             .map((e) => _NotifyItem.fromJson(e as Map<String, dynamic>))
-            .where((e) => !_mutedTypes.contains(e.notificationType))
             .toList();
         setState(() {
           _items = list;
@@ -121,13 +120,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() => _items.removeWhere((e) => e.id == item.id));
   }
 
-  Future<void> _muteType(_NotifyItem item) async {
-    setState(() {
-      _mutedTypes.add(item.notificationType);
-      _items.removeWhere((e) => e.notificationType == item.notificationType);
-    });
-  }
-
   Future<void> _openTarget(_NotifyItem item) async {
     await _markRead(item);
     if (!mounted) return;
@@ -155,11 +147,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           MaterialPageRoute(builder: (_) => const FriendsScreen(initialTab: 0)),
         );
         break;
+      case 'post_new':
       case 'post_like':
       case 'post_comment':
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const CommunityScreen()),
+          MaterialPageRoute(
+            builder: (_) => CommunityScreen(initialPostId: item.postId),
+          ),
         );
         break;
       default:
@@ -191,10 +186,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               itemBuilder: (_, index) {
                 final item = _items[index];
                 return ListTile(
-                  leading: Icon(
-                    item.isRead
-                        ? Icons.notifications_none
-                        : Icons.notifications_active,
+                  leading: initialsAvatar(
+                    item.targetUsername.isEmpty
+                        ? item.title
+                        : item.targetUsername,
                   ),
                   title: Text(item.title),
                   subtitle: Column(
@@ -228,16 +223,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         onSelected: (value) {
                           if (value == 'delete') {
                             _deleteNotification(item);
-                          } else if (value == 'mute') {
-                            _muteType(item);
                           }
                         },
                         itemBuilder: (_) => const [
                           PopupMenuItem(value: 'delete', child: Text('Xóa')),
-                          PopupMenuItem(
-                            value: 'mute',
-                            child: Text('Tắt thông báo'),
-                          ),
                         ],
                       ),
                     ],
@@ -257,8 +246,10 @@ class _NotifyItem {
     required this.content,
     required this.notificationType,
     required this.targetUsername,
-    required this.isRead,
     required this.createdAt,
+    required this.avatarUrl,
+    required this.postId,
+    required this.isRead,
     this.conversationId,
   });
 
@@ -269,6 +260,8 @@ class _NotifyItem {
   final String targetUsername;
   final String createdAt;
   final int? conversationId;
+  final int? postId;
+  final String avatarUrl;
   bool isRead;
 
   factory _NotifyItem.fromJson(Map<String, dynamic> json) {
@@ -279,7 +272,9 @@ class _NotifyItem {
       notificationType: (json['notification_type'] ?? 'system').toString(),
       targetUsername: (json['target_username'] ?? '').toString(),
       createdAt: (json['created_at'] ?? '').toString(),
+      avatarUrl: (json['avatar_url'] ?? json['avatar'] ?? '').toString(),
       conversationId: (json['conversation_id'] as num?)?.toInt(),
+      postId: (json['post_id'] as num?)?.toInt(),
       isRead: json['is_read'] == true,
     );
   }

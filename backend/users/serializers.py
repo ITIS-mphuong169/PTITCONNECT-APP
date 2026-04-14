@@ -3,6 +3,9 @@ from rest_framework import serializers
 
 from .models import FriendRequest, Profile
 
+from rest_framework import serializers
+from users.models import Profile
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -19,9 +22,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
 
+
 class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
-    email = serializers.EmailField(source="user.email", read_only=True)
+    email = serializers.CharField(source="user.email", read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -39,7 +44,16 @@ class ProfileSerializer(serializers.ModelSerializer):
             "major",
             "bio",
             "avatar",
+            "avatar_url",
         ]
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.avatar.url)
+        return obj.avatar.url
 
 
 class FriendRequestSerializer(serializers.ModelSerializer):

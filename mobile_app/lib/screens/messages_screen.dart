@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/app_api.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/profile_screen.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -26,11 +27,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
   final _searchController = TextEditingController();
   bool _loading = true;
   List<_Conversation> _conversations = [];
-  final Set<int> _mutedConversationIds = <int>{};
   Timer? _timer;
   WebSocketChannel? _userChannel;
   StreamSubscription? _userSub;
   bool _openedInitialConversation = false;
+  bool _openedInitialConversationId = false;
 
   @override
   void initState() {
@@ -89,11 +90,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Future<void> _loadConversations({bool silent = false}) async {
     if (!silent && mounted) setState(() => _loading = true);
 
+    final query = _searchController.text.trim();
     final uri = Uri.parse('${AppApi.chat}/').replace(
       queryParameters: {
         'username': AppSession.username,
-        if (_searchController.text.trim().isNotEmpty)
-          'q': _searchController.text.trim(),
+        if (query.isNotEmpty) 'q': query,
       },
     );
 
@@ -104,7 +105,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (res.statusCode == 200) {
         final list = (jsonDecode(res.body) as List<dynamic>)
             .map((e) => _Conversation.fromJson(e as Map<String, dynamic>))
-            .where((e) => !_mutedConversationIds.contains(e.id))
             .toList();
 
         setState(() {
@@ -112,9 +112,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
           _loading = false;
         });
 
-        if (widget.openConversationId != null) {
+        if (!_openedInitialConversationId && widget.openConversationId != null) {
           final matches = list.where((e) => e.id == widget.openConversationId);
           if (matches.isNotEmpty) {
+            _openedInitialConversationId = true;
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => _pushChat(matches.first),
             );
@@ -206,10 +207,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             final u = users[i];
                             return ListTile(
                               dense: true,
-                              leading: _avatarSmall(
-                                avatarUrl: u.avatar,
-                                fallbackText: u.fullName,
-                              ),
+                              leading: _avatarSmall(fallbackText: u.fullName),
                               title: Text(u.fullName),
                               subtitle: Text('${u.studentId} • ${u.username}'),
                               onTap: () => Navigator.pop(context, u),
@@ -229,10 +227,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (conv != null && mounted) _pushChat(conv);
   }
 
-  Future<void> _pushChat(_Conversation item) async {
+  Future<void> _pushChat(
+    _Conversation item, {
+    String initialSearchQuery = '',
+  }) async {
     final result = await Navigator.push<_ChatActionResult>(
       context,
-      MaterialPageRoute(builder: (_) => _ChatDetailScreen(conversation: item)),
+      MaterialPageRoute(
+        builder: (_) => _ChatDetailScreen(
+          conversation: item,
+          initialSearchQuery: initialSearchQuery,
+        ),
+      ),
     );
 
     if (!mounted) return;
@@ -241,14 +247,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
       setState(() {
         _conversations.removeWhere((e) => e.id == item.id);
       });
-    } else if (result?.action == 'mute') {
-      setState(() {
-        _mutedConversationIds.add(item.id);
-        _conversations.removeWhere((e) => e.id == item.id);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã tắt thông báo cuộc trò chuyện')),
-      );
     } else {
       _loadConversations();
     }
@@ -262,6 +260,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return '${item.peer.studentId} • $preview';
   }
 
+  bool _isPeerNameMatch(_Conversation item, String q) {
+    if (q.isEmpty) return false;
+    final s = q.toLowerCase();
+    return item.peer.fullName.toLowerCase().contains(s) ||
+        item.peer.studentId.toLowerCase().contains(s) ||
+        item.peer.username.toLowerCase().contains(s);
+  }
+
   Future<void> _deleteConversation(_Conversation item) async {
     await http.delete(
       Uri.parse(
@@ -270,13 +276,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
     if (!mounted) return;
     setState(() => _conversations.removeWhere((e) => e.id == item.id));
-  }
-
-  void _muteConversation(_Conversation item) {
-    setState(() {
-      _mutedConversationIds.add(item.id);
-      _conversations.removeWhere((e) => e.id == item.id);
-    });
   }
 
   String _parseError(String raw) {
@@ -294,19 +293,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
-  static Widget _avatarSmall({
-    required String avatarUrl,
-    required String fallbackText,
-  }) {
-    if (avatarUrl.isNotEmpty) {
-      return CircleAvatar(backgroundImage: NetworkImage(avatarUrl));
-    }
-    return CircleAvatar(
-      child: Text(
-        _initials(fallbackText),
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-      ),
-    );
+  static Widget _avatarSmall({required String fallbackText}) {
+    return initialsAvatar(fallbackText, radius: 20, fontSize: 12);
   }
 
   static String _initials(String text) {
@@ -315,6 +303,61 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (parts.length == 1) return parts.first.characters.first.toUpperCase();
     return (parts.first.characters.first + parts.last.characters.first)
         .toUpperCase();
+  }
+
+  Widget _buildSearchResults(String query) {
+    final friendMatches = _conversations
+        .where((e) => _isPeerNameMatch(e, query))
+        .toList();
+    final messageMatches = _conversations.where((e) => e.matchedCount > 0).toList();
+
+    if (friendMatches.isEmpty && messageMatches.isEmpty) {
+      return const Center(child: Text('Không tìm thấy kết quả phù hợp'));
+    }
+
+    return ListView(
+      children: [
+        if (friendMatches.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 8, 14, 6),
+            child: Text(
+              'Bạn bè',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          ...friendMatches.map(
+            (item) => ListTile(
+              leading: _avatarSmall(fallbackText: item.peer.fullName),
+              title: Text(item.peer.fullName),
+              subtitle: Text(item.peer.studentId),
+              onTap: () => _pushChat(item, initialSearchQuery: query),
+            ),
+          ),
+          const Divider(height: 16),
+        ],
+        if (messageMatches.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
+            child: Text(
+              'Tin nhắn',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          ...messageMatches.map(
+            (item) => ListTile(
+              leading: _avatarSmall(fallbackText: item.peer.fullName),
+              title: Text(item.peer.fullName),
+              subtitle: Text(
+                '${item.matchedCount} tin nhắn khớp',
+                style: const TextStyle(color: Color(0xFF4E81FF)),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => _pushChat(item, initialSearchQuery: query),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   @override
@@ -348,6 +391,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
+                : _searchController.text.trim().isNotEmpty
+                ? _buildSearchResults(_searchController.text.trim())
                 : _conversations.isEmpty
                 ? const Center(child: Text('Chưa có cuộc trò chuyện nào'))
                 : ListView.separated(
@@ -360,10 +405,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           horizontal: 12,
                           vertical: 6,
                         ),
-                        leading: _avatarSmall(
-                          avatarUrl: item.peer.avatar,
-                          fallbackText: item.peer.fullName,
-                        ),
+                        leading: _avatarSmall(fallbackText: item.peer.fullName),
                         title: Text(
                           item.peer.fullName,
                           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -404,18 +446,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                 onSelected: (value) {
                                   if (value == 'delete') {
                                     _deleteConversation(item);
-                                  } else if (value == 'mute') {
-                                    _muteConversation(item);
                                   }
                                 },
                                 itemBuilder: (_) => const [
                                   PopupMenuItem(
                                     value: 'delete',
                                     child: Text('Xóa'),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'mute',
-                                    child: Text('Tắt thông báo'),
                                   ),
                                 ],
                               ),
@@ -444,9 +480,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
 }
 
 class _ChatDetailScreen extends StatefulWidget {
-  const _ChatDetailScreen({required this.conversation});
+  const _ChatDetailScreen({
+    required this.conversation,
+    this.initialSearchQuery = '',
+  });
 
   final _Conversation conversation;
+  final String initialSearchQuery;
 
   @override
   State<_ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -455,23 +495,36 @@ class _ChatDetailScreen extends StatefulWidget {
 class _ChatDetailScreenState extends State<_ChatDetailScreen> {
   final _controller = TextEditingController();
   final _searchController = TextEditingController();
+  final ScrollController _messagesScrollController = ScrollController();
   bool _loading = true;
   bool _showSearch = false;
   List<_ChatMessage> _messages = [];
+  final List<int> _searchMatchIndexes = [];
+  int _activeSearchMatchPointer = -1;
+  final Map<int, GlobalKey> _messageRowKeys = {};
   Timer? _pollTimer;
   WebSocketChannel? _channel;
   StreamSubscription? _wsSub;
   Timer? _typingTimer;
   bool _peerTyping = false;
+  bool _isNearBottom = true;
+  bool _showJumpToLatest = false;
+  int? _lastMessageId;
+  bool _forceScrollToBottom = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialSearchQuery.trim().isNotEmpty) {
+      _showSearch = true;
+      _searchController.text = widget.initialSearchQuery.trim();
+    }
     _loadMessages();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (mounted) _loadMessages(silent: true);
     });
     _connectSocket();
+    _messagesScrollController.addListener(_onMessagesScroll);
   }
 
   @override
@@ -479,10 +532,41 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
     _pollTimer?.cancel();
     _controller.dispose();
     _searchController.dispose();
+    _messagesScrollController.dispose();
     _wsSub?.cancel();
     _channel?.sink.close();
     _typingTimer?.cancel();
     super.dispose();
+  }
+
+  void _onMessagesScroll() {
+    if (!_messagesScrollController.hasClients) return;
+    final pos = _messagesScrollController.position;
+    final nearBottom = (pos.maxScrollExtent - pos.pixels) < 80;
+    if (_isNearBottom != nearBottom) {
+      _isNearBottom = nearBottom;
+      if (nearBottom && _showJumpToLatest && mounted) {
+        setState(() => _showJumpToLatest = false);
+      }
+    }
+  }
+
+  Future<void> _scrollToBottom({bool animated = true}) async {
+    if (!_messagesScrollController.hasClients) return;
+    final target = _messagesScrollController.position.maxScrollExtent;
+    final current = _messagesScrollController.position.pixels;
+    final distance = (target - current).abs();
+    if (distance < 6) return;
+    if (animated) {
+      final durationMs = distance.clamp(140, 420).toInt();
+      await _messagesScrollController.animateTo(
+        target,
+        duration: Duration(milliseconds: durationMs),
+        curve: Curves.easeInOutCubic,
+      );
+    } else {
+      _messagesScrollController.jumpTo(target);
+    }
   }
 
   void _connectSocket() {
@@ -522,8 +606,6 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
         .replace(
           queryParameters: {
             'username': AppSession.username,
-            if (_searchController.text.trim().isNotEmpty)
-              'q': _searchController.text.trim(),
           },
         );
 
@@ -531,18 +613,105 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
       final res = await http.get(uri).timeout(const Duration(seconds: 8));
       if (!mounted) return;
       if (res.statusCode == 200) {
+        final previousLastId = _lastMessageId;
         final list = (jsonDecode(res.body) as List<dynamic>)
             .map((e) => _ChatMessage.fromJson(e as Map<String, dynamic>))
             .toList();
+        final nextLastId = list.isNotEmpty ? list.last.id : null;
+        final hasNewIncoming = previousLastId != null &&
+            nextLastId != null &&
+            nextLastId != previousLastId;
         setState(() {
           _messages = list;
+          _lastMessageId = nextLastId;
+          _messageRowKeys.clear();
+          _recomputeSearchMatches();
           _loading = false;
         });
+        if (_searchController.text.trim().isNotEmpty &&
+            _searchMatchIndexes.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _jumpSearchMatch(0);
+          });
+        } else {
+          final shouldAutoScroll = _forceScrollToBottom ||
+              previousLastId == null ||
+              (_isNearBottom && hasNewIncoming);
+          if (shouldAutoScroll) {
+            _forceScrollToBottom = false;
+            if (_showJumpToLatest && mounted) {
+              setState(() => _showJumpToLatest = false);
+            }
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _scrollToBottom();
+            });
+          } else if (hasNewIncoming && mounted) {
+            setState(() => _showJumpToLatest = true);
+          }
+        }
         return;
       }
     } catch (_) {}
 
     if (mounted) setState(() => _loading = false);
+  }
+
+  void _recomputeSearchMatches() {
+    final q = _searchController.text.trim().toLowerCase();
+    _searchMatchIndexes.clear();
+    if (q.isEmpty) {
+      _activeSearchMatchPointer = -1;
+      return;
+    }
+    for (var i = 0; i < _messages.length; i++) {
+      if (_messages[i].content.toLowerCase().contains(q)) {
+        _searchMatchIndexes.add(i);
+      }
+    }
+    if (_searchMatchIndexes.isEmpty) {
+      _activeSearchMatchPointer = -1;
+      return;
+    }
+    if (_activeSearchMatchPointer < 0 ||
+        _activeSearchMatchPointer >= _searchMatchIndexes.length) {
+      _activeSearchMatchPointer = 0;
+    }
+  }
+
+  Future<void> _jumpSearchMatch(int delta) async {
+    if (_searchMatchIndexes.isEmpty) return;
+    setState(() {
+      _activeSearchMatchPointer =
+          (_activeSearchMatchPointer + delta) % _searchMatchIndexes.length;
+      if (_activeSearchMatchPointer < 0) {
+        _activeSearchMatchPointer = _searchMatchIndexes.length - 1;
+      }
+    });
+
+    final messageIndex = _searchMatchIndexes[_activeSearchMatchPointer];
+    final key = _messageRowKeys[messageIndex];
+    if (key?.currentContext != null) {
+      await Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeInOutCubic,
+        alignment: 0.35,
+      );
+      return;
+    }
+    if (_messagesScrollController.hasClients && _messages.length > 1) {
+      final ratio = messageIndex / (_messages.length - 1);
+      final roughOffset =
+          _messagesScrollController.position.maxScrollExtent * ratio;
+      await _messagesScrollController.animateTo(
+        roughOffset.clamp(
+          0,
+          _messagesScrollController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeInOutCubic,
+      );
+    }
   }
 
   Future<void> _send() async {
@@ -557,6 +726,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
 
     if (res.statusCode == 201) {
       _controller.clear();
+      _forceScrollToBottom = true;
       _loadMessages(silent: true);
     }
   }
@@ -569,11 +739,6 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
     );
     if (!mounted) return;
     Navigator.pop(context, const _ChatActionResult(action: 'delete'));
-  }
-
-  void _muteConversationFromDetail() {
-    if (!mounted) return;
-    Navigator.pop(context, const _ChatActionResult(action: 'mute'));
   }
 
   void _sendTyping() {
@@ -601,7 +766,57 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
     return next.sender != msg.sender;
   }
 
-  Widget _buildMessageBubble(_ChatMessage msg, bool mine) {
+  List<TextSpan> _buildMessageSpans(
+    String content,
+    bool mine,
+    bool isActiveMatch,
+  ) {
+    final query = _searchController.text.trim();
+    final baseStyle = TextStyle(
+      color: mine ? Colors.white : const Color(0xFF1C1C1C),
+      fontSize: 15,
+    );
+    if (query.isEmpty) {
+      return [TextSpan(text: content, style: baseStyle)];
+    }
+
+    final lowerContent = content.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final idx = lowerContent.indexOf(lowerQuery, start);
+      if (idx < 0) {
+        if (start < content.length) {
+          spans.add(TextSpan(text: content.substring(start), style: baseStyle));
+        }
+        break;
+      }
+      if (idx > start) {
+        spans.add(TextSpan(text: content.substring(start, idx), style: baseStyle));
+      }
+      spans.add(
+        TextSpan(
+          text: content.substring(idx, idx + query.length),
+          style: baseStyle.copyWith(
+            fontWeight: FontWeight.w800,
+            backgroundColor: isActiveMatch
+                ? const Color(0xFFFFD54F)
+                : const Color(0x66FFF59D),
+            color: mine ? const Color(0xFF0D1B2A) : const Color(0xFF0D1B2A),
+          ),
+        ),
+      );
+      start = idx + query.length;
+    }
+    return spans;
+  }
+
+  Widget _buildMessageBubble(_ChatMessage msg, bool mine, {required int index}) {
+    final isActiveMatch = _searchMatchIndexes.isNotEmpty &&
+        _activeSearchMatchPointer >= 0 &&
+        _activeSearchMatchPointer < _searchMatchIndexes.length &&
+        _searchMatchIndexes[_activeSearchMatchPointer] == index;
     return Container(
       constraints: const BoxConstraints(maxWidth: 240),
       margin: const EdgeInsets.symmetric(vertical: 3),
@@ -618,11 +833,9 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(
-            msg.content,
-            style: TextStyle(
-              color: mine ? Colors.white : const Color(0xFF1C1C1C),
-              fontSize: 15,
+          RichText(
+            text: TextSpan(
+              children: _buildMessageSpans(msg.content, mine, isActiveMatch),
             ),
           ),
           const SizedBox(height: 4),
@@ -645,7 +858,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
     if (mine) {
       return Align(
         alignment: Alignment.centerRight,
-        child: _buildMessageBubble(msg, true),
+        child: _buildMessageBubble(msg, true, index: index),
       );
     }
 
@@ -661,22 +874,18 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
             child: showAvatar
                 ? CircleAvatar(
                     radius: 14,
-                    backgroundImage: widget.conversation.peer.avatar.isNotEmpty
-                        ? NetworkImage(widget.conversation.peer.avatar)
-                        : null,
-                    child: widget.conversation.peer.avatar.isEmpty
-                        ? Text(
-                            _MessagesScreenState._initials(
-                              widget.conversation.peer.fullName,
-                            ),
-                            style: const TextStyle(fontSize: 11),
-                          )
-                        : null,
+                    backgroundColor: const Color(0xFFF8D5E0),
+                    child: Text(
+                      _MessagesScreenState._initials(
+                        widget.conversation.peer.fullName,
+                      ),
+                      style: const TextStyle(fontSize: 11),
+                    ),
                   )
                 : const SizedBox.shrink(),
           ),
           const SizedBox(width: 8),
-          Flexible(child: _buildMessageBubble(msg, false)),
+          Flexible(child: _buildMessageBubble(msg, false, index: index)),
         ],
       ),
     );
@@ -688,14 +897,10 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
         _showSearch = !_showSearch;
         if (!_showSearch) {
           _searchController.clear();
+          _recomputeSearchMatches();
           _loadMessages(silent: true);
         }
       });
-      return;
-    }
-
-    if (value == 'mute') {
-      _muteConversationFromDetail();
       return;
     }
 
@@ -739,18 +944,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundImage: peer.avatar.isNotEmpty
-                  ? NetworkImage(peer.avatar)
-                  : null,
-              child: peer.avatar.isEmpty
-                  ? Text(
-                      _MessagesScreenState._initials(peer.fullName),
-                      style: const TextStyle(fontSize: 12),
-                    )
-                  : null,
-            ),
+            initialsAvatar(peer.fullName, radius: 18, fontSize: 12),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -777,7 +971,6 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
             onSelected: _handleMenuAction,
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'search', child: Text('Tìm kiếm nội dung')),
-              PopupMenuItem(value: 'mute', child: Text('Tắt thông báo')),
               PopupMenuItem(value: 'delete', child: Text('Xóa tin nhắn')),
             ],
           ),
@@ -788,23 +981,59 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
           if (_showSearch)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (_) => _loadMessages(silent: true),
-                decoration: InputDecoration(
-                  hintText: 'Tìm trong cuộc trò chuyện',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      _searchController.clear();
-                      _loadMessages(silent: true);
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (_) {
+                      setState(() {
+                        _recomputeSearchMatches();
+                      });
                     },
-                    icon: const Icon(Icons.close),
+                    decoration: InputDecoration(
+                      hintText: 'Tìm trong cuộc trò chuyện',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          _recomputeSearchMatches();
+                          _loadMessages(silent: true);
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        _searchMatchIndexes.isEmpty
+                            ? '0 kết quả'
+                            : '${_activeSearchMatchPointer + 1}/${_searchMatchIndexes.length} kết quả',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _searchMatchIndexes.isEmpty
+                            ? null
+                            : () => _jumpSearchMatch(-1),
+                        icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                      ),
+                      IconButton(
+                        onPressed: _searchMatchIndexes.isEmpty
+                            ? null
+                            : () => _jumpSearchMatch(1),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
             ),
           Expanded(
@@ -815,12 +1044,35 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
                   : _messages.isEmpty
                   ? const Center(child: Text('Chưa có tin nhắn nào'))
                   : ListView.builder(
+                      controller: _messagesScrollController,
                       padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
                       itemCount: _messages.length,
-                      itemBuilder: (_, index) => _buildMessageRow(index),
+                      itemBuilder: (_, index) {
+                        final key = _messageRowKeys.putIfAbsent(
+                          index,
+                          () => GlobalKey(),
+                        );
+                        return KeyedSubtree(
+                          key: key,
+                          child: _buildMessageRow(index),
+                        );
+                      },
                     ),
             ),
           ),
+          if (_showJumpToLatest)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  _forceScrollToBottom = true;
+                  setState(() => _showJumpToLatest = false);
+                  _scrollToBottom();
+                },
+                icon: const Icon(Icons.arrow_downward_rounded, size: 18),
+                label: const Text('Tin nhắn mới'),
+              ),
+            ),
           SafeArea(
             top: false,
             child: Container(
@@ -892,6 +1144,7 @@ class _Conversation {
     required this.peer,
     required this.lastMessage,
     required this.matchedMessage,
+    required this.matchedCount,
     required this.unreadCount,
     required this.lastMessageTime,
   });
@@ -900,6 +1153,7 @@ class _Conversation {
   final _ProfileMini peer;
   final String lastMessage;
   final String matchedMessage;
+  final int matchedCount;
   final int unreadCount;
   final String lastMessageTime;
 
@@ -911,6 +1165,7 @@ class _Conversation {
       ),
       lastMessage: (json['last_message'] ?? '').toString(),
       matchedMessage: (json['matched_message'] ?? '').toString(),
+      matchedCount: (json['matched_count'] as num?)?.toInt() ?? 0,
       unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
       lastMessageTime: (json['last_message_time'] ?? json['updated_at'] ?? '')
           .toString(),

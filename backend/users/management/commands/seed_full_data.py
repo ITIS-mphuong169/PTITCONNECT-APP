@@ -1,4 +1,5 @@
 import random
+import requests
 import unicodedata
 from collections import defaultdict
 
@@ -76,7 +77,7 @@ class Command(BaseCommand):
         self.create_notifications(users, friend_map, pending_in, conv_map)
 
         self.stdout.write("COMMUNITY...")
-        posts = self.seed_community(users)
+        self.seed_community(users)
 
         self.stdout.write("DOCUMENTS...")
         self.seed_documents(users)
@@ -169,8 +170,26 @@ class Command(BaseCommand):
             )
             profile.address = random.choice(addresses)
             profile.bio = "Sinh viên PTIT - sẵn sàng kết nối học tập."
-            profile.save()
 
+            try:
+                gender_query = "male" if profile.gender == "Nam" else "female"
+                res = requests.get(
+                    f"https://randomuser.me/api/?gender={gender_query}",
+                    timeout=5,
+                )
+                data = res.json()
+                avatar_url = data["results"][0]["picture"]["large"]
+                img_res = requests.get(avatar_url, timeout=5)
+
+                profile.avatar.save(
+                    f"{username}.jpg",
+                    ContentFile(img_res.content),
+                    save=False,
+                )
+            except Exception as e:
+                print("Avatar error:", e)
+
+            profile.save()
             users.append(user)
 
         return users
@@ -294,7 +313,6 @@ class Command(BaseCommand):
         for u in users:
             count = 0
 
-            # 5 thông báo lời mời kết bạn
             for sender_id in list(pending_in[u.id])[:5]:
                 sender = User.objects.get(id=sender_id)
                 Notification.objects.create(
@@ -307,7 +325,6 @@ class Command(BaseCommand):
                 )
                 count += 1
 
-            # 5 thông báo bạn bè
             for fid in list(friend_map[u.id])[:5]:
                 friend = User.objects.get(id=fid)
                 Notification.objects.create(
@@ -320,7 +337,6 @@ class Command(BaseCommand):
                 )
                 count += 1
 
-            # 5 thông báo tin nhắn
             for conv in conv_map[u.id][:5]:
                 other = conv.user2 if conv.user1_id == u.id else conv.user1
                 Notification.objects.create(
@@ -334,7 +350,6 @@ class Command(BaseCommand):
                 )
                 count += 1
 
-            # hệ thống cho đủ 20
             while count < 20:
                 Notification.objects.create(
                     user=u,

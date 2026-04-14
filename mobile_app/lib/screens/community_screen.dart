@@ -3,12 +3,19 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/app_api.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/documents_screen.dart';
 import 'package:mobile_app/screens/groups_screen.dart';
 
+Widget _avatar(String name, {double radius = 20}) {
+  return initialsAvatar(name, radius: radius, fontSize: 12);
+}
+
 class CommunityScreen extends StatefulWidget {
-  const CommunityScreen({super.key});
+  const CommunityScreen({super.key, this.initialPostId});
+
+  final int? initialPostId;
 
   @override
   State<CommunityScreen> createState() => _CommunityScreenState();
@@ -21,6 +28,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
   final _searchController = TextEditingController();
   String _selectedTopic = 'all';
   List<_Post> _posts = [];
+  bool _openedInitialPost = false;
 
   @override
   void initState() {
@@ -58,6 +66,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
         _posts = list;
         _loading = false;
       });
+      _tryOpenInitialPost();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -66,6 +75,27 @@ class _CommunityScreenState extends State<CommunityScreen> {
         _posts = [];
       });
     }
+  }
+
+  void _tryOpenInitialPost() {
+    if (_openedInitialPost || widget.initialPostId == null || !mounted) return;
+    final matches = _posts.where((e) => e.id == widget.initialPostId);
+    if (matches.isEmpty) return;
+    _openedInitialPost = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _PostDetailScreen(
+            post: matches.first,
+            username: AppSession.username,
+            apiBase: _apiBase,
+          ),
+        ),
+      );
+      if (mounted) _loadPosts();
+    });
   }
 
   Future<void> _createPost() async {
@@ -460,13 +490,14 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
           Expanded(
             child: ListView.builder(
               itemCount: widget.post.comments.length,
-              itemBuilder: (_, index) => ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.person, size: 18),
-                ),
-                title: Text(widget.post.comments[index].author),
-                subtitle: Text(widget.post.comments[index].content),
-              ),
+              itemBuilder: (_, index) {
+                final comment = widget.post.comments[index];
+                return ListTile(
+                  leading: _avatar(comment.author),
+                  title: Text(comment.author),
+                  subtitle: Text(comment.content),
+                );
+              },
             ),
           ),
           SafeArea(
@@ -508,6 +539,8 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                             _Comment(
                               author: (body['author_name'] ?? widget.username)
                                   .toString(),
+                              authorAvatarUrl:
+                                  (body['author_avatar_url'] ?? '').toString(),
                               content: (body['content'] ?? '').toString(),
                             ),
                           );
@@ -609,6 +642,7 @@ class _Post {
           .map(
             (e) => _Comment(
               author: (e['author_name'] ?? '').toString(),
+              authorAvatarUrl: (e['author_avatar_url'] ?? '').toString(),
               content: (e['content'] ?? '').toString(),
             ),
           )
@@ -618,8 +652,13 @@ class _Post {
 }
 
 class _Comment {
-  _Comment({required this.author, required this.content});
+  _Comment({
+    required this.author,
+    required this.content,
+    required this.authorAvatarUrl,
+  });
 
   final String author;
   final String content;
+  final String authorAvatarUrl;
 }
