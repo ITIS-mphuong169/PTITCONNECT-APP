@@ -46,110 +46,59 @@ class _GroupsScreenState extends State<GroupsScreen> {
     final titleCtl = TextEditingController();
     final subjectCtl = TextEditingController();
     final categoryCtl = TextEditingController();
-    final avatarCtl = TextEditingController();
     final descCtl = TextEditingController();
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
           title: const Text('Tạo nhóm'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: titleCtl, decoration: const InputDecoration(labelText: 'Tên nhóm')),
-              const SizedBox(height: 8),
-              TextField(controller: subjectCtl, decoration: const InputDecoration(labelText: 'Môn học')),
-              const SizedBox(height: 8),
-              TextField(controller: categoryCtl, decoration: const InputDecoration(labelText: 'Danh mục nhóm')),
-              const SizedBox(height: 8),
-              TextField(
-                controller: descCtl,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Mô tả'),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: avatarCtl,
-                      decoration: const InputDecoration(labelText: 'Ảnh bìa URL (tùy chọn)'),
-                      onChanged: (_) => setStateDialog(() {}),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Upload ảnh',
-                    icon: const Icon(Icons.upload_file),
-                    onPressed: () async {
-                      final url = await showDialog<String>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('Nhập URL ảnh bìa'),
-                          content: TextField(
-                            autofocus: true,
-                            decoration: const InputDecoration(hintText: 'https://...'),
-                            controller: TextEditingController(text: avatarCtl.text),
-                            onChanged: (value) {},
-                          ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context, avatarCtl.text.trim());
-                              },
-                              child: const Text('OK'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (url != null && url.isNotEmpty) {
-                        avatarCtl.text = url;
-                        setStateDialog(() {});
-                      }
-                    },
-                  ),
-                  IconButton(
-                    tooltip: 'Xóa ảnh',
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      avatarCtl.clear();
-                      setStateDialog(() {});
-                    },
-                  ),
-                ],
-              ),
-              if (avatarCtl.text.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: SizedBox(
-                    height: 130,
-                    width: double.infinity,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        avatarCtl.text,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: Colors.grey.shade200,
-                          child: const Center(
-                            child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtl,
+                  decoration: const InputDecoration(labelText: 'Tên nhóm'),
                 ),
-            ],
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: subjectCtl,
+                  decoration: const InputDecoration(labelText: 'Môn học'),
+                ),
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: categoryCtl,
+                  decoration: const InputDecoration(labelText: 'Danh mục nhóm'),
+                ),
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: descCtl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Mô tả'),
+                ),
+              ],
+            ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Tạo')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Tạo'),
+            ),
           ],
         ),
       ),
     );
+
     if (ok != true) return;
+
     final res = await http.post(
       Uri.parse('${AppApi.groups}/'),
       headers: const {'Content-Type': 'application/json'},
@@ -158,11 +107,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
         'title': titleCtl.text.trim(),
         'subject': subjectCtl.text.trim(),
         'category': categoryCtl.text.trim(),
-        'avatar_url': avatarCtl.text.trim(),
         'description': descCtl.text.trim(),
       }),
     );
-    if (res.statusCode == 201) _load();
+
+    if (res.statusCode == 201) {
+      _load();
+    }
   }
 
   Future<void> _joinGroup(_Group g) async {
@@ -214,15 +165,22 @@ class _GroupsScreenState extends State<GroupsScreen> {
     });
   }
 
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('#Nhóm học tập'),
-        actions: [IconButton(onPressed: _createGroup, icon: const Icon(Icons.group_add_outlined))],
+        actions: [
+          IconButton(
+            onPressed: _createGroup,
+            icon: const Icon(Icons.group_add_outlined),
+          ),
+        ],
       ),
       body: Column(
         children: [
+          /// 🔍 Search
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
             child: TextField(
@@ -233,74 +191,58 @@ class _GroupsScreenState extends State<GroupsScreen> {
               decoration: const InputDecoration(
                 hintText: 'Tìm nhóm theo tên hoặc mô tả...',
                 prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
               ),
             ),
           ),
+
+          /// 📋 List nhóm
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : ListView.separated(
-                    padding: const EdgeInsets.all(14),
-                    itemCount: _groups.length,
-                    separatorBuilder: (_, index) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) {
-                      final g = _groups[i];
-                      return Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.grey.shade200),
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
+                : _groups.isEmpty
+                    ? const Center(child: Text('Không có nhóm nào'))
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(14),
+                        itemCount: _groups.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (_, i) {
+                          final g = _groups[i];
+
+                          return Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade200),
+                              color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        clipBehavior: Clip.hardEdge,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (g.avatarUrl.isNotEmpty)
-                              SizedBox(
-                                height: 160,
-                                width: double.infinity,
-                                child: Image.network(
-                                  g.avatarUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => Container(
-                                    color: Colors.grey.shade200,
-                                    child: const Center(
-                                      child: Icon(Icons.image_not_supported, color: Colors.grey, size: 36),
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              Container(
-                                height: 160,
-                                width: double.infinity,
-                                color: Colors.grey.shade200,
-                                child: const Center(
-                                  child: Icon(Icons.image, color: Colors.grey, size: 48),
-                                ),
-                              ),
-                            Padding(
+                            child: Padding(
                               padding: const EdgeInsets.all(14),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  /// 🏷️ Title
                                   Text(
                                     g.title,
                                     style: const TextStyle(
-                                      fontSize: 18,
+                                      fontSize: 17,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
+
                                   const SizedBox(height: 6),
+
+                                  /// 📝 Description
                                   Text(
-                                    g.description.isEmpty ? 'Không có mô tả' : g.description,
+                                    g.description.isEmpty
+                                        ? 'Không có mô tả'
+                                        : g.description,
                                     maxLines: 3,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -308,7 +250,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                       fontSize: 13,
                                     ),
                                   ),
+
                                   const SizedBox(height: 10),
+
+                                  /// 👥 Member + trạng thái
                                   Row(
                                     children: [
                                       Expanded(
@@ -321,12 +266,16 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                           ),
                                         ),
                                       ),
-                                      if (g.ownerName.toLowerCase() == AppSession.username.toLowerCase())
+
+                                      if (g.ownerName.toLowerCase() ==
+                                          AppSession.username.toLowerCase())
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 6),
                                           decoration: BoxDecoration(
                                             color: Colors.grey.shade100,
-                                            borderRadius: BorderRadius.circular(10),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
                                           ),
                                           child: Text(
                                             'Chủ nhóm',
@@ -338,10 +287,12 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                         )
                                       else if (g.joined)
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 6),
                                           decoration: BoxDecoration(
                                             color: Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(10),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
                                           ),
                                           child: Text(
                                             'Đã tham gia',
@@ -356,15 +307,21 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                         ElevatedButton(
                                           onPressed: () => _joinGroup(g),
                                           style: ElevatedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 14, vertical: 8),
                                             shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(10),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                             ),
                                           ),
                                           child: const Text('Tham gia'),
                                         ),
                                     ],
                                   ),
-                                  const SizedBox(height: 10),
+
+                                  const SizedBox(height: 8),
+
+                                  /// 📚 Subject + Category
                                   Text(
                                     '${g.subject} • ${g.category.isEmpty ? "Khác" : g.category}',
                                     style: TextStyle(
@@ -375,11 +332,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                          );
+                        },
+                      ),
           ),
         ],
       ),
@@ -477,4 +432,3 @@ class _Group {
     );
   }
 }
-
