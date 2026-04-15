@@ -1,9 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/screens/create_post_screen.dart';
 import 'package:mobile_app/screens/documents_screen.dart';
 import 'package:mobile_app/screens/groups_screen.dart';
 
@@ -47,12 +52,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
         },
       );
       final res = await http.get(uri);
-      if (res.statusCode != 200) {
-        throw Exception('status ${res.statusCode}');
-      }
+      if (res.statusCode != 200) throw Exception('status ${res.statusCode}');
+
       final list = (jsonDecode(res.body) as List<dynamic>)
           .map((e) => _Post.fromJson(e as Map<String, dynamic>))
           .toList();
+
       if (!mounted) return;
       setState(() {
         _posts = list;
@@ -68,92 +73,21 @@ class _CommunityScreenState extends State<CommunityScreen> {
     }
   }
 
-  Future<void> _createPost() async {
-    final controller = TextEditingController();
-    final content = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 18,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Tạo bài viết',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: controller,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  hintText: 'Bạn đang nghĩ gì?',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () =>
-                      Navigator.pop(context, controller.text.trim()),
-                  child: const Text('Đăng'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (content == null || content.isEmpty) return;
-    if (!mounted) return;
-    final topicController = TextEditingController();
-    final pickedTopic = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nhập category'),
-        content: TextField(
-          controller: topicController,
-          decoration: const InputDecoration(hintText: 'Ví dụ: Flutter'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Bỏ qua'),
-          ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(context, topicController.text.trim()),
-            child: const Text('Xong'),
-          ),
-        ],
+  // ── Mở CreatePostScreen dưới dạng bottom sheet ──
+  Future<void> _openCreatePost() async {
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => CreatePostScreen(
+        onPostCreated: (newPostJson) {
+          setState(() {
+            _posts.insert(0, _Post.fromJson(newPostJson));
+          });
+        },
       ),
-    );
-    final title = content.length > 60
-        ? '${content.substring(0, 60)}...'
-        : content;
-    final res = await http.post(
-      Uri.parse('$_apiBase/posts/'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'username': AppSession.username,
-        'title': title,
-        'content': content,
-        'topic': (pickedTopic == null || pickedTopic.isEmpty)
-            ? 'Community'
-            : pickedTopic,
-      }),
-    );
-    if (res.statusCode == 201) {
-      await _loadPosts();
-    }
-  }
+    ),
+  );
+}
 
   Future<void> _toggleLike(_Post post) async {
     final res = await http.post(
@@ -187,165 +121,160 @@ class _CommunityScreenState extends State<CommunityScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cộng đồng'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const DocumentsScreen()),
-                );
-              },
-              child: const Text('#Tài liệu'),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const GroupsScreen()),
-                );
-              },
-              child: const Text('#Nhóm'),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Cộng đồng')),
       floatingActionButton: FloatingActionButton(
-        onPressed: _createPost,
+        onPressed: _openCreatePost,
         backgroundColor: const Color(0xFFF33B6D),
         child: const Icon(Icons.add, color: Colors.white),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Không tải được dữ liệu cộng đồng',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Không tải được dữ liệu cộng đồng',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        Text(_errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                        const SizedBox(height: 12),
+                        ElevatedButton(onPressed: _loadPosts, child: const Text('Thử lại')),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: _loadPosts,
-                      child: const Text('Thử lại'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadPosts,
-              child: ListView.separated(
-                padding: const EdgeInsets.all(14),
-                itemCount: _filteredPosts.length + 1,
-                separatorBuilder: (_, index) => const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return _buildFilters();
-                  }
-                  final post = _filteredPosts[index - 1];
-                  return Card(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => _PostDetailScreen(
-                              post: post,
-                              username: AppSession.username,
-                              apiBase: _apiBase,
-                            ),
-                          ),
-                        );
-                        _loadPosts();
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              post.author,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadPosts,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: _filteredPosts.length + 1,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      if (index == 0) return _buildFilters();
+                      final post = _filteredPosts[index - 1];
+
+                      return Card(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => _PostDetailScreen(
+                                  post: post,
+                                  username: AppSession.username,
+                                  apiBase: _apiBase,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              post.content,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
+                            );
+                            _loadPosts();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                IconButton(
-                                  onPressed: () => _toggleLike(post),
-                                  icon: Icon(
-                                    post.isLiked
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    color: post.isLiked ? Colors.red : null,
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        post.author,
+                                        style: const TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                    if (post.createdAt != null && post.createdAt!.isNotEmpty)
+                                      Text(
+                                        _formatRelativeTime(post.createdAt!),
+                                        style: const TextStyle(
+                                          color: Colors.black54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                                Text('${post.likes}'),
-                                const SizedBox(width: 12),
-                                const Icon(
-                                  Icons.mode_comment_outlined,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 6),
-                                Text('${post.comments.length} bình luận'),
-                                const Spacer(),
-                                IconButton(
-                                  onPressed: () => _toggleSave(post),
-                                  icon: Icon(
-                                    post.isSaved
-                                        ? Icons.bookmark
-                                        : Icons.bookmark_border,
+                                const SizedBox(height: 6),
+                                Text(post.content, maxLines: 3, overflow: TextOverflow.ellipsis),
+
+                                // ── HIỂN THỊ ẢNH ──
+                                if (post.image != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 10),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        post.image!,
+                                        height: 180,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) => const SizedBox(),
+                                      ),
+                                    ),
                                   ),
+
+                                // ── HIỂN THỊ FILE ──
+                                if (post.file != null && post.fileName != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 10),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.attach_file, size: 20, color: Colors.blue),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            post.fileName!,
+                                            style: const TextStyle(fontSize: 13, color: Colors.blue),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => _toggleLike(post),
+                                      icon: Icon(
+                                        post.isLiked ? Icons.favorite : Icons.favorite_border,
+                                        color: post.isLiked ? Colors.red : null,
+                                      ),
+                                    ),
+                                    Text('${post.likes}'),
+                                    const SizedBox(width: 12),
+                                    const Icon(Icons.mode_comment_outlined, size: 20),
+                                    const SizedBox(width: 6),
+                                    Text('${_countAllComments(post.comments)} bình luận'),
+                                    const Spacer(),
+                                    IconButton(
+                                      onPressed: () => _toggleSave(post),
+                                      icon: Icon(
+                                        post.isSaved ? Icons.bookmark : Icons.bookmark_border,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 
   List<_Post> get _filteredPosts {
     final q = _searchController.text.trim().toLowerCase();
     return _posts.where((p) {
-      final topicOk =
-          _selectedTopic == 'all' ||
-          p.topic.toLowerCase() == _selectedTopic.toLowerCase();
-      final queryOk =
-          q.isEmpty ||
+      final topicOk = _selectedTopic == 'all' || p.topic.toLowerCase() == _selectedTopic.toLowerCase();
+      final queryOk = q.isEmpty ||
           p.content.toLowerCase().contains(q) ||
           p.author.toLowerCase().contains(q) ||
           p.topic.toLowerCase().contains(q);
@@ -353,11 +282,27 @@ class _CommunityScreenState extends State<CommunityScreen> {
     }).toList();
   }
 
+  String _formatRelativeTime(String createdAt) {
+    final created = DateTime.tryParse(createdAt);
+    if (created == null) return '';
+    final diff = DateTime.now().difference(created.toLocal());
+    if (diff.inSeconds < 60) return 'Vừa xong';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
+    if (diff.inHours < 24) return '${diff.inHours} tiếng trước';
+    if (diff.inDays < 7) return '${diff.inDays} ngày trước';
+    return '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}';
+  }
+
+  int _countAllComments(List<_Comment> comments) {
+    int total = comments.length;
+    for (final comment in comments) {
+      total += _countAllComments(comment.replies);
+    }
+    return total;
+  }
+
   Widget _buildFilters() {
-    final topics = <String>{
-      'all',
-      ..._posts.map((e) => e.topic).where((e) => e.isNotEmpty),
-    };
+    final topics = <String>{'all', ..._posts.map((e) => e.topic).where((e) => e.isNotEmpty)};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -384,21 +329,135 @@ class _CommunityScreenState extends State<CommunityScreen> {
           height: 40,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            children: topics.map((topic) {
-              final selected = topic == _selectedTopic;
-              final label = topic == 'all' ? '#Tất_cả' : '#$topic';
-              return Padding(
+            children: [
+              ...topics.map((topic) {
+                final selected = topic == _selectedTopic;
+                final label = topic == 'all' ? '#Tất_cả' : '#$topic';
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(label),
+                    selected: selected,
+                    onSelected: (_) => setState(() => _selectedTopic = topic),
+                  ),
+                );
+              }),
+              Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
-                  label: Text(label),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _selectedTopic = topic),
+                  label: const Text('#Tài liệu'),
+                  selected: false,
+                  onSelected: (_) => Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen())),
                 ),
-              );
-            }).toList(),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: const Text('#Nhóm'),
+                  selected: false,
+                  onSelected: (_) => Navigator.push(context, MaterialPageRoute(builder: (_) => const GroupsScreen())),
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Các class hỗ trợ (giữ nguyên + bổ sung file)
+// ─────────────────────────────────────────────────────────────
+class _Post {
+  _Post({
+    required this.id,
+    required this.author,
+    required this.content,
+    required this.likes,
+    required this.topic,
+    required this.comments,
+    this.image,
+    this.file,
+    this.fileName,
+    this.createdAt,
+  });
+
+  final int id;
+  final String author;
+  String content;
+  String topic;
+  int likes;
+  bool isLiked = false;
+  bool isSaved = false;
+  final List<_Comment> comments;
+
+  String? image;
+  String? file;
+  String? fileName;
+  final String? createdAt;
+
+  factory _Post.fromJson(Map<String, dynamic> json) {
+    final likeCount = (json['like_count'] as num?)?.toInt() ?? 0;
+    final postId = (json['id'] as num?)?.toInt() ?? 0;
+
+    // Xử lý link media (ảnh + file)
+    String? imageUrl = json['image'];
+    if (imageUrl != null && imageUrl.startsWith('/')) {
+      imageUrl = 'http://127.0.0.1:8000$imageUrl';
+    }
+
+    String? fileUrl = json['file'];
+    if (fileUrl != null && fileUrl.startsWith('/')) {
+      fileUrl = 'http://127.0.0.1:8000$fileUrl';
+    }
+
+    final post = _Post(
+      id: postId,
+      author: (json['author_name'] ?? json['username'] ?? '').toString(),
+      content: (json['content'] ?? '').toString(),
+      likes: likeCount,
+      topic: (json['topic'] ?? '').toString(),
+      image: imageUrl,
+      file: fileUrl,
+      fileName: json['file_name'],
+      createdAt: json['created_at'],
+      comments: (json['comments'] as List<dynamic>? ?? [])
+          .map((e) => _Comment.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+    
+    // Set like/save state from backend
+    post.isLiked = json['is_liked'] == true;
+    post.isSaved = json['is_saved'] == true;
+    
+    return post;
+  }
+}
+
+class _Comment {
+  _Comment({
+    required this.id,
+    required this.author,
+    required this.content,
+    this.createdAt,
+    List<_Comment>? replies,
+  }) : replies = replies ?? [];
+  final int id;
+  final String author;
+  final String content;
+  final String? createdAt;
+  final List<_Comment> replies;
+
+  factory _Comment.fromJson(Map<String, dynamic> json) {
+    return _Comment(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      author: (json['author_name'] ?? '').toString(),
+      content: (json['content'] ?? '').toString(),
+      createdAt: json['created_at']?.toString(),
+      replies: (json['replies'] as List<dynamic>? ?? [])
+          .map((e) => _Comment.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -427,6 +486,17 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
     super.dispose();
   }
 
+  String _formatRelativeTime(String createdAt) {
+    final created = DateTime.tryParse(createdAt);
+    if (created == null) return '';
+    final diff = DateTime.now().difference(created.toLocal());
+    if (diff.inSeconds < 60) return 'Vừa xong';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
+    if (diff.inHours < 24) return '${diff.inHours} tiếng trước';
+    if (diff.inDays < 7) return '${diff.inDays} ngày trước';
+    return '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -434,10 +504,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
         title: const Text('Chi tiết bài viết'),
         actions: [
           if (widget.post.author.toLowerCase() == widget.username.toLowerCase())
-            IconButton(
-              onPressed: _editPost,
-              icon: const Icon(Icons.edit_outlined),
-            ),
+            IconButton(onPressed: _editPost, icon: const Icon(Icons.edit_outlined)),
         ],
       ),
       body: Column(
@@ -447,12 +514,70 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.post.author,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+                Text(widget.post.author, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Text(widget.post.content),
+
+                // ── HIỂN THỊ ẢNH TRONG DETAIL ──
+                if (widget.post.image != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: GestureDetector(
+                      onTap: () => _showImageDialog(widget.post.image!),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Stack(
+                          children: [
+                            Image.network(
+                              widget.post.image!,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                            Positioned(
+                              bottom: 10,
+                              right: 10,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'Xem ảnh',
+                                  style: TextStyle(color: Colors.white, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // ── HIỂN THỊ FILE TRONG DETAIL ──
+                if (widget.post.file != null && widget.post.fileName != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: InkWell(
+                      onTap: () => _openUrl(widget.post.file!),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.attach_file, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.post.fileName!,
+                              style: const TextStyle(
+                                color: Colors.blue,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                          const Icon(Icons.open_in_new, size: 18, color: Colors.blue),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -460,12 +585,9 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
           Expanded(
             child: ListView.builder(
               itemCount: widget.post.comments.length,
-              itemBuilder: (_, index) => ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.person, size: 18),
-                ),
-                title: Text(widget.post.comments[index].author),
-                subtitle: Text(widget.post.comments[index].content),
+              itemBuilder: (_, index) => _buildCommentThread(
+                widget.post.comments[index],
+                level: 0,
               ),
             ),
           ),
@@ -491,9 +613,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                       final text = _commentController.text.trim();
                       if (text.isEmpty) return;
                       final res = await http.post(
-                        Uri.parse(
-                          '${widget.apiBase}/posts/${widget.post.id}/comments/',
-                        ),
+                        Uri.parse('${widget.apiBase}/posts/${widget.post.id}/comments/'),
                         headers: const {'Content-Type': 'application/json'},
                         body: jsonEncode({
                           'username': widget.username,
@@ -501,15 +621,10 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                         }),
                       );
                       if (res.statusCode == 201) {
-                        final body =
-                            jsonDecode(res.body) as Map<String, dynamic>;
+                        final body = jsonDecode(res.body) as Map<String, dynamic>;
                         setState(() {
                           widget.post.comments.add(
-                            _Comment(
-                              author: (body['author_name'] ?? widget.username)
-                                  .toString(),
-                              content: (body['content'] ?? '').toString(),
-                            ),
+                            _Comment.fromJson(body),
                           );
                           _commentController.clear();
                         });
@@ -526,100 +641,312 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
     );
   }
 
-  Future<void> _editPost() async {
-    final ctl = TextEditingController(text: widget.post.content);
-    final topicCtl = TextEditingController(text: widget.post.topic);
+  Future<void> _showImageDialog(String imageUrl) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: InteractiveViewer(
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return SizedBox(
+                  width: double.infinity,
+                  height: 240,
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Không thể tải ảnh.', textAlign: TextAlign.center),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không thể mở file.')),
+      );
+    }
+  }
+
+  Widget _buildCommentThread(_Comment comment, {int level = 0}) {
+    final indent = 16.0 * level;
+    final timeStr = comment.createdAt != null && comment.createdAt!.isNotEmpty
+        ? _formatRelativeTime(comment.createdAt!)
+        : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.person, size: 18)),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(comment.author),
+              ),
+              if (timeStr.isNotEmpty)
+                Text(
+                  ' | $timeStr',
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 2),
+              Text(comment.content),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () => _showReplyDialog(comment),
+                child: const Text(
+                  'Trả lời',
+                  style: TextStyle(
+                    color: Colors.blue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          contentPadding: EdgeInsets.fromLTRB(indent + 12, 0, 12, 0),
+          minLeadingWidth: 32,
+          horizontalTitleGap: 8,
+          dense: true,
+        ),
+        // Replies
+        ...comment.replies.map((reply) => _buildCommentThread(reply, level: level + 1)),
+      ],
+    );
+  }
+
+  Future<void> _showReplyDialog(_Comment parentComment) async {
+    final replyCtl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Chỉnh sửa bài viết'),
+        title: const Text('Trả lời bình luận'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: ctl,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Nội dung'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Trả lời ${parentComment.author}',
+                style: const TextStyle(
+                  color: Colors.black54,
+                  fontSize: 14,
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
             TextField(
-              controller: topicCtl,
-              decoration: const InputDecoration(labelText: 'Category'),
+              controller: replyCtl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Nhập trả lời...',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Lưu')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Gửi'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
-    final content = ctl.text.trim();
-    final topic = topicCtl.text.trim();
-    final title = content.length > 60 ? '${content.substring(0, 60)}...' : content;
-    final res = await http.patch(
-      Uri.parse('${widget.apiBase}/posts/${widget.post.id}/'),
+    final text = replyCtl.text.trim();
+    if (text.isEmpty) return;
+    final res = await http.post(
+      Uri.parse('${widget.apiBase}/posts/${widget.post.id}/comments/'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({
         'username': widget.username,
-        'title': title,
-        'content': content,
-        'topic': topic,
+        'content': text,
+        'parent_id': parentComment.id,
       }),
     );
-    if (res.statusCode == 200) {
+    if (res.statusCode == 201) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
       setState(() {
-        widget.post.content = content;
-        widget.post.topic = topic;
+        parentComment.replies.add(
+          _Comment.fromJson(body),
+        );
       });
     }
   }
-}
 
-class _Post {
-  _Post({
-    required this.id,
-    required this.author,
-    required this.content,
-    required this.likes,
-    required this.topic,
-    required this.comments,
-  });
+  // ... (phần _editPost giữ nguyên như cũ)
+  Future<void> _editPost() async {
+    final ctl = TextEditingController(text: widget.post.content);
+    final topicCtl = TextEditingController(text: widget.post.topic);
+    XFile? selectedImage;
+    bool removeImage = false;
 
-  final int id;
-  final String author;
-  String content;
-  String topic;
-  int likes;
-  bool isLiked = false;
-  bool isSaved = false;
-  final List<_Comment> comments;
-
-  factory _Post.fromJson(Map<String, dynamic> json) {
-    final likeCount = (json['like_count'] as num?)?.toInt() ?? 0;
-    final postId = (json['id'] as num?)?.toInt() ?? 0;
-    return _Post(
-      id: postId,
-      author: (json['author_name'] ?? '').toString(),
-      content: (json['content'] ?? '').toString(),
-      likes: likeCount,
-      topic: (json['topic'] ?? '').toString(),
-      comments: (json['comments'] as List<dynamic>? ?? [])
-          .map(
-            (e) => _Comment(
-              author: (e['author_name'] ?? '').toString(),
-              content: (e['content'] ?? '').toString(),
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Chỉnh sửa bài viết'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: ctl,
+                  maxLines: 4,
+                  decoration: const InputDecoration(labelText: 'Nội dung'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: topicCtl,
+                  decoration: const InputDecoration(labelText: 'Category'),
+                ),
+                const SizedBox(height: 12),
+                if (selectedImage != null || (widget.post.image != null && !removeImage)) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 160,
+                      child: selectedImage != null
+                          ? (kIsWeb
+                              ? Image.network(selectedImage!.path, fit: BoxFit.cover)
+                              : Image.file(File(selectedImage!.path), fit: BoxFit.cover))
+                          : Image.network(widget.post.image!, fit: BoxFit.cover),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (removeImage && selectedImage == null)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text('Ảnh hiện tại sẽ bị xóa.', style: TextStyle(color: Colors.redAccent)),
+                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picker = ImagePicker();
+                          final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                          if (image != null) {
+                            setStateDialog(() {
+                              selectedImage = image;
+                              removeImage = false;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.image_outlined, size: 18),
+                        label: const Text('Chọn ảnh'),
+                      ),
+                    ),
+                    if ((widget.post.image != null && !removeImage) || selectedImage != null) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          setStateDialog(() {
+                            selectedImage = null;
+                            removeImage = true;
+                          });
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Xóa ảnh'),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
-          )
-          .toList(),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Lưu')),
+          ],
+        ),
+      ),
     );
+
+    if (ok != true) return;
+
+    final content = ctl.text.trim();
+    final topic = topicCtl.text.trim();
+    final title = content.length > 60 ? '${content.substring(0, 60)}...' : content;
+
+    if (selectedImage != null || removeImage) {
+      final request = http.MultipartRequest('PATCH', Uri.parse('${widget.apiBase}/posts/${widget.post.id}/'))
+        ..fields['username'] = widget.username
+        ..fields['title'] = title
+        ..fields['content'] = content
+        ..fields['topic'] = topic;
+
+      if (selectedImage != null) {
+        final bytes = await selectedImage!.readAsBytes();
+        request.files.add(http.MultipartFile.fromBytes(
+          'image',
+          bytes,
+          filename: selectedImage!.name,
+        ));
+      }
+      if (removeImage && selectedImage == null) {
+        request.fields['remove_image'] = '1';
+      }
+
+      final streamedResponse = await request.send();
+      final res = await http.Response.fromStream(streamedResponse);
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        String? imageUrl = body['image'] as String?;
+        if (imageUrl != null && imageUrl.startsWith('/')) {
+          imageUrl = 'http://127.0.0.1:8000$imageUrl';
+        }
+        setState(() {
+          widget.post.content = content;
+          widget.post.topic = topic;
+          widget.post.image = imageUrl;
+        });
+      }
+    } else {
+      final res = await http.patch(
+        Uri.parse('${widget.apiBase}/posts/${widget.post.id}/'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': widget.username,
+          'title': title,
+          'content': content,
+          'topic': topic,
+        }),
+      );
+      if (res.statusCode == 200) {
+        setState(() {
+          widget.post.content = content;
+          widget.post.topic = topic;
+        });
+      }
+    }
   }
-}
-
-class _Comment {
-  _Comment({required this.author, required this.content});
-
-  final String author;
-  final String content;
 }

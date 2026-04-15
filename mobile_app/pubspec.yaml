@@ -39,7 +39,7 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.5.5
   file_picker: ^11.0.2
-  
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:

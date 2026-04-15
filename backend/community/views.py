@@ -40,27 +40,36 @@ def posts_api(request):
             queryset = queryset.filter(
                 Q(title__icontains=keyword) | Q(content__icontains=keyword) | Q(topic__icontains=keyword)
             )
-        serializer = PostSerializer(queryset[:50], many=True)
+        actor = resolve_demo_user(request)
+        serializer = PostSerializer(queryset[:50], many=True, context={'request': request, 'user': actor})
         return Response(serializer.data)
 
     actor = resolve_demo_user(request)
     title = (request.data.get("title") or "").strip()
     content = (request.data.get("content") or "").strip()
     topic = (request.data.get("topic") or "").strip()
+    image = request.FILES.get("image")
+    attached_file = request.FILES.get("attached_file")
     if not title or not content:
         return Response({"detail": "title and content are required"}, status=status.HTTP_400_BAD_REQUEST)
-    post = Post.objects.create(author=actor, title=title, content=content, topic=topic)
-    return Response(PostSerializer(post).data, status=status.HTTP_201_CREATED)
+    post = Post.objects.create(
+        author=actor,
+        title=title,
+        content=content,
+        topic=topic,
+        image=image,
+        file=attached_file,
+    )
+    return Response(PostSerializer(post, context={'request': request, 'user': actor}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([permissions.AllowAny])
 def post_detail_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
-    if request.method == "GET":
-        return Response(PostSerializer(post).data)
-
     actor = resolve_demo_user(request)
+    if request.method == "GET":
+        return Response(PostSerializer(post, context={'request': request, 'user': actor}).data)
     if post.author_id != actor.id:
         return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -70,11 +79,24 @@ def post_detail_api(request, post_id):
         topic = (request.data.get("topic") or post.topic).strip()
         if not title or not content:
             return Response({"detail": "title and content are required"}, status=status.HTTP_400_BAD_REQUEST)
+
         post.title = title
         post.content = content
         post.topic = topic
-        post.save(update_fields=["title", "content", "topic"])
-        return Response(PostSerializer(post).data)
+
+        image = request.FILES.get("image")
+        remove_image = str(request.data.get("remove_image", "")).lower() in ["1", "true", "yes", "on"]
+        if image is not None:
+            post.image = image
+        elif remove_image:
+            post.image = None
+
+        update_fields = ["title", "content", "topic"]
+        if image is not None or remove_image:
+            update_fields.append("image")
+
+        post.save(update_fields=update_fields)
+        return Response(PostSerializer(post, context={'request': request, 'user': actor}).data)
 
     post.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -86,9 +108,15 @@ def post_comment_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
     actor = resolve_demo_user(request)
     content = (request.data.get("content") or "").strip()
+    parent_id = request.data.get("parent_id")
     if not content:
         return Response({"detail": "content is required"}, status=status.HTTP_400_BAD_REQUEST)
-    comment = Comment.objects.create(post=post, author=actor, content=content)
+    
+    parent = None
+    if parent_id:
+        parent = get_object_or_404(Comment, id=parent_id, post=post)
+    
+    comment = Comment.objects.create(post=post, author=actor, content=content, parent=parent)
     return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
 

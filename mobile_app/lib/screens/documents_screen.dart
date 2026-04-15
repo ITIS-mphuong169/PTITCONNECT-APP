@@ -80,11 +80,19 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  String _normalizeDropdownLabel(String value) {
+    if (value.isEmpty) return value;
+    if (value == value.toUpperCase() && value.length > 1) {
+      return '${value[0]}${value.substring(1).toLowerCase()}';
+    }
+    return value;
+  }
+
   Future<void> _showUploadDialog() async {
     final titleCtl = TextEditingController();
     final descCtl = TextEditingController();
     String subject = _subjects.length > 1 ? _subjects[1] : 'Flutter';
-    String category = _categories.length > 1 ? _categories[1] : 'Giáo trình';
+    String category = 'INT';
     String docType = 'other';
     PlatformFile? selected;
     Uint8List? bytes;
@@ -102,55 +110,72 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 children: [
                   TextField(
                     controller: titleCtl,
-                    decoration: const InputDecoration(labelText: 'Tiêu đề'),
+                    style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
+                    decoration: const InputDecoration(
+                      labelText: 'Tiêu đề',
+                      labelStyle: TextStyle(fontWeight: FontWeight.normal),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: subject,
+                    style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
                     items: _subjects
                         .where((s) => s != 'All')
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map((s) => DropdownMenuItem(value: s, child: Text(_normalizeDropdownLabel(s), style: const TextStyle(fontWeight: FontWeight.normal))))
                         .toList(),
                     onChanged: (v) =>
                         setDialogState(() => subject = v ?? subject),
-                    decoration: const InputDecoration(labelText: 'Môn học'),
+                    decoration: const InputDecoration(labelText: 'Môn học', labelStyle: TextStyle(fontWeight: FontWeight.normal)),
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: category,
-                    items: _categories
-                        .where((s) => s != 'All')
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
+                    style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
+                    items: const [
+                      DropdownMenuItem(value: 'INT', child: Text('INT', style: TextStyle(fontWeight: FontWeight.normal))),
+                      DropdownMenuItem(value: 'BAS', child: Text('BAS', style: TextStyle(fontWeight: FontWeight.normal))),
+                    ],
                     onChanged: (v) =>
                         setDialogState(() => category = v ?? category),
-                    decoration: const InputDecoration(labelText: 'Danh mục'),
+                    decoration: const InputDecoration(
+                      labelText: 'Danh mục',
+                      labelStyle: TextStyle(fontWeight: FontWeight.normal),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: docType,
+                    style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
                     items: const [
-                      DropdownMenuItem(value: 'slide', child: Text('Slide')),
-                      DropdownMenuItem(value: 'report', child: Text('Báo cáo')),
-                      DropdownMenuItem(value: 'exam', child: Text('Đề thi')),
-                      DropdownMenuItem(value: 'note', child: Text('Ghi chú')),
-                      DropdownMenuItem(value: 'other', child: Text('Khác')),
+                      DropdownMenuItem(value: 'slide', child: Text('Slide', style: TextStyle(fontWeight: FontWeight.normal))),
+                      DropdownMenuItem(value: 'report', child: Text('Báo cáo', style: TextStyle(fontWeight: FontWeight.normal))),
+                      DropdownMenuItem(value: 'exam', child: Text('Đề thi', style: TextStyle(fontWeight: FontWeight.normal))),
+                      DropdownMenuItem(value: 'note', child: Text('Ghi chú', style: TextStyle(fontWeight: FontWeight.normal))),
+                      DropdownMenuItem(value: 'other', child: Text('Khác', style: TextStyle(fontWeight: FontWeight.normal))),
                     ],
                     onChanged: (v) =>
                         setDialogState(() => docType = v ?? docType),
-                    decoration: const InputDecoration(labelText: 'Loại tài liệu'),
+                    decoration: const InputDecoration(
+                      labelText: 'Loại tài liệu',
+                      labelStyle: TextStyle(fontWeight: FontWeight.normal),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: descCtl,
+                    style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
                     minLines: 2,
                     maxLines: 4,
-                    decoration: const InputDecoration(labelText: 'Mô tả'),
+                    decoration: const InputDecoration(
+                      labelText: 'Mô tả',
+                      labelStyle: TextStyle(fontWeight: FontWeight.normal),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
                     onPressed: () async {
-                      final result = await FilePicker.pickFiles(
+                      final result = await FilePicker.platform.pickFiles(
                         withData: true,
                       );
                       if (result == null || result.files.isEmpty) return;
@@ -299,25 +324,85 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     separatorBuilder: (_, index) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
                       final d = _docs[i];
-                      return Card(
-                        child: ListTile(
-                          title: Text(d.title),
-                          subtitle: Text(
-                            '${d.subject} • ${d.category.isEmpty ? "Khác" : d.category} • ${d.uploaderName}',
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                onPressed: () => _showDetail(d),
-                                icon: const Icon(Icons.visibility_outlined),
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Colors.pink.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.pink.shade200),
+                        ),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              d.title,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
                               ),
-                              IconButton(
-                                onPressed: () => _openDoc(d),
-                                icon: const Icon(Icons.download_outlined),
-                              ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Text(
+                                  '${d.downloadCount} lượt tải',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  width: 4,
+                                  height: 4,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black26,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    d.uploaderName,
+                                    style: TextStyle(
+                                      color: Colors.grey.shade700,
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _openDoc(d),
+                                    icon: const Icon(Icons.picture_as_pdf, size: 16),
+                                    label: const Text('PDF'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.black87,
+                                      side: BorderSide(color: Colors.grey.shade400),
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => _showDetail(d),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.pink.shade800,
+                                      side: BorderSide(color: Colors.pink.shade400),
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                    ),
+                                    child: const Text('Xem thông tin tài liệu'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -376,7 +461,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     final titleCtl = TextEditingController(text: doc.title);
     final descCtl = TextEditingController(text: doc.description);
     String subject = doc.subject;
-    String category = doc.category.isEmpty ? 'Giáo trình' : doc.category;
+    String category = doc.category.isEmpty ? 'INT' : doc.category;
     String docType = doc.documentType;
     final ok = await showDialog<bool>(
       context: context,
@@ -387,47 +472,64 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
           children: [
             TextField(
               controller: titleCtl,
-              decoration: const InputDecoration(labelText: 'Tiêu đề'),
+              style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
+              decoration: const InputDecoration(
+                labelText: 'Tiêu đề',
+                labelStyle: TextStyle(fontWeight: FontWeight.normal),
+              ),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               initialValue: subject,
+              style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
               items: _subjects
                   .where((s) => s != 'All')
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .map((s) => DropdownMenuItem(value: s, child: Text(_normalizeDropdownLabel(s), style: const TextStyle(fontWeight: FontWeight.normal))))
                   .toList(),
               onChanged: (v) => subject = v ?? subject,
-              decoration: const InputDecoration(labelText: 'Môn học'),
+              decoration: const InputDecoration(labelText: 'Môn học', labelStyle: TextStyle(fontWeight: FontWeight.normal)),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               initialValue: category,
-              items: _categories
-                  .where((s) => s != 'All')
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
+              style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
+              items: const [
+                DropdownMenuItem(value: 'INT', child: Text('INT', style: TextStyle(fontWeight: FontWeight.normal))),
+                DropdownMenuItem(value: 'BAS', child: Text('BAS', style: TextStyle(fontWeight: FontWeight.normal))),
+              ],
               onChanged: (v) => category = v ?? category,
-              decoration: const InputDecoration(labelText: 'Danh mục'),
+              decoration: const InputDecoration(
+                labelText: 'Danh mục',
+                labelStyle: TextStyle(fontWeight: FontWeight.normal),
+              ),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               initialValue: docType,
+              style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
               items: const [
-                DropdownMenuItem(value: 'slide', child: Text('Slide')),
-                DropdownMenuItem(value: 'report', child: Text('Báo cáo')),
-                DropdownMenuItem(value: 'exam', child: Text('Đề thi')),
-                DropdownMenuItem(value: 'note', child: Text('Ghi chú')),
-                DropdownMenuItem(value: 'other', child: Text('Khác')),
+                DropdownMenuItem(value: 'slide', child: Text('Slide', style: TextStyle(fontWeight: FontWeight.normal))),
+                DropdownMenuItem(value: 'report', child: Text('Báo cáo', style: TextStyle(fontWeight: FontWeight.normal))),
+                DropdownMenuItem(value: 'exam', child: Text('Đề thi', style: TextStyle(fontWeight: FontWeight.normal))),
+                DropdownMenuItem(value: 'note', child: Text('Ghi chú', style: TextStyle(fontWeight: FontWeight.normal))),
+                DropdownMenuItem(value: 'other', child: Text('Khác', style: TextStyle(fontWeight: FontWeight.normal))),
               ],
               onChanged: (v) => docType = v ?? docType,
-              decoration: const InputDecoration(labelText: 'Loại tài liệu'),
+              decoration: const InputDecoration(
+                labelText: 'Loại tài liệu',
+                labelStyle: TextStyle(fontWeight: FontWeight.normal),
+              ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: descCtl,
+              style: const TextStyle(fontWeight: FontWeight.normal, color: Colors.black87),
               minLines: 2,
               maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Mô tả'),
+              decoration: const InputDecoration(
+                labelText: 'Mô tả',
+                labelStyle: TextStyle(fontWeight: FontWeight.normal),
+              ),
             ),
           ],
         ),

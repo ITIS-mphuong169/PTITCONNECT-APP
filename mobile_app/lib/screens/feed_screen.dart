@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mobile_app/core/avatar_utils.dart';
+import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/feed_detail_screen.dart';
 import 'package:mobile_app/screens/profile_screen.dart';
 
@@ -53,10 +55,10 @@ class _FeedScreenState extends State<FeedScreen> {
                   MaterialPageRoute(builder: (_) => const ProfileScreen()),
                 );
               },
-              icon: const CircleAvatar(
+              icon: initialsAvatar(
+                AppSession.username,
                 radius: 16,
-                backgroundColor: Color(0xFFF8D5E0),
-                child: Icon(Icons.person, size: 18),
+                fontSize: 11,
               ),
             ),
           ),

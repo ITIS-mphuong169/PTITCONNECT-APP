@@ -7,6 +7,11 @@ class Post(models.Model):
     title = models.CharField(max_length=255)
     content = models.TextField()
     topic = models.CharField(max_length=100, blank=True)
+    
+    # THÊM DÒNG NÀY ĐỂ LƯU ẢNH (Có thể để trống nếu bài không có ảnh)
+    image = models.ImageField(upload_to="post_images/", blank=True, null=True)
+    file = models.FileField(upload_to="post_files/", blank=True, null=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -15,11 +20,11 @@ class Post(models.Model):
     def __str__(self):
         return self.title
 
-
 class Comment(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="comments")
     content = models.TextField()
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, related_name="replies", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
