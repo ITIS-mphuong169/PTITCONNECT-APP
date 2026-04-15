@@ -330,18 +330,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
-              ...topics.map((topic) {
-                final selected = topic == _selectedTopic;
-                final label = topic == 'all' ? '#Tất_cả' : '#$topic';
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(label),
-                    selected: selected,
-                    onSelected: (_) => setState(() => _selectedTopic = topic),
-                  ),
-                );
-              }),
+              
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
