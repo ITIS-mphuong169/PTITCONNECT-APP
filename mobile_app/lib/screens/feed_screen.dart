@@ -16,6 +16,7 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   late Future<List<FeedItem>> _futureItems;
+  final Map<String, String?> _resolvedImageCache = {};
 
   @override
   void initState() {
@@ -36,7 +37,71 @@ class _FeedScreenState extends State<FeedScreen> {
     final list = (body['results'] as List<dynamic>? ?? [])
         .map((item) => FeedItem.fromJson(item as Map<String, dynamic>))
         .toList();
+    _prefetchImages(list);
     return list;
+  }
+
+  void _prefetchImages(List<FeedItem> items) {
+    for (final item in items.take(8)) {
+      if ((item.imageUrl ?? '').isNotEmpty) {
+        _resolvedImageCache[item.url] = item.imageUrl;
+        continue;
+      }
+      if (_resolvedImageCache.containsKey(item.url)) continue;
+      _resolveImageForItem(item);
+    }
+  }
+
+  Future<void> _resolveImageForItem(FeedItem item) async {
+    final url = item.url;
+    if (_resolvedImageCache.containsKey(url)) return;
+    _resolvedImageCache[url] = null;
+
+    try {
+      final uri = Uri.tryParse(url);
+      if (uri == null) return;
+      final response = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) return;
+      final resolved = _extractImageUrl(response.body, uri);
+      if (!mounted || resolved == null || resolved.isEmpty) return;
+      setState(() => _resolvedImageCache[url] = resolved);
+    } catch (_) {
+      // Keep text-only card when source blocks image extraction.
+    }
+  }
+
+  String? _extractImageUrl(String html, Uri baseUri) {
+    final patterns = <RegExp>[
+      RegExp(
+        r'''<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']''',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'''<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']''',
+        caseSensitive: false,
+      ),
+      RegExp(r'''<img[^>]+src=["']([^"']+)["']''', caseSensitive: false),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(html);
+      if (match == null) continue;
+      final raw = (match.group(1) ?? '').trim();
+      if (raw.isEmpty) continue;
+      final resolved = _resolveUrl(raw, baseUri);
+      if (resolved == null) continue;
+      if (resolved.toLowerCase().endsWith('.svg')) continue;
+      return resolved;
+    }
+    return null;
+  }
+
+  String? _resolveUrl(String raw, Uri baseUri) {
+    if (raw.startsWith('data:')) return null;
+    if (raw.startsWith('//')) return '${baseUri.scheme}:$raw';
+    final parsed = Uri.tryParse(raw);
+    if (parsed == null) return null;
+    if (parsed.hasScheme) return parsed.toString();
+    return baseUri.resolveUri(parsed).toString();
   }
 
   @override
@@ -102,13 +167,17 @@ class _FeedScreenState extends State<FeedScreen> {
               separatorBuilder: (_, index) => const SizedBox(height: 12),
               itemBuilder: (_, index) {
                 final item = items[index];
+                final imageUrl = _resolvedImageCache[item.url] ?? item.imageUrl;
                 return InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => FeedDetailScreen(item: item),
+                        builder: (_) => FeedDetailScreen(
+                          item: item,
+                          initialImageUrl: imageUrl,
+                        ),
                       ),
                     );
                   },
@@ -122,6 +191,28 @@ class _FeedScreenState extends State<FeedScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if ((imageUrl ?? '').isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              imageUrl!,
+                              height: 140,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                height: 140,
+                                width: double.infinity,
+                                alignment: Alignment.center,
+                                color: const Color(0xFFFFE6EF),
+                                child: const Icon(
+                                  Icons.broken_image_outlined,
+                                  color: Colors.black45,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
                         Text(
                           item.title,
                           style: const TextStyle(

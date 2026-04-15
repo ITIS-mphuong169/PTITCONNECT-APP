@@ -10,8 +10,7 @@ import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/screens/create_post_screen.dart';
-import 'package:mobile_app/screens/documents_screen.dart';
-import 'package:mobile_app/screens/groups_screen.dart';
+import 'package:mobile_app/screens/document_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key, this.initialPostId});
@@ -471,7 +470,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 child: ChoiceChip(
                   label: const Text('#Tài liệu'),
                   selected: false,
-                  onSelected: (_) => Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen())),
+                  onSelected: (_) => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DocumentScreen(initialTab: 0),
+                    ),
+                  ),
                 ),
               ),
               Padding(
@@ -479,7 +483,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 child: ChoiceChip(
                   label: const Text('#Nhóm'),
                   selected: false,
-                  onSelected: (_) => Navigator.push(context, MaterialPageRoute(builder: (_) => const GroupsScreen())),
+                  onSelected: (_) => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DocumentScreen(initialTab: 1),
+                    ),
+                  ),
                 ),
               ),
             ],

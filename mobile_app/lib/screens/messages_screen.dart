@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/profile_screen.dart';
+import 'package:mobile_app/theme/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class MessagesScreen extends StatefulWidget {
@@ -92,10 +96,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
     final query = _searchController.text.trim();
     final uri = Uri.parse('${AppApi.chat}/').replace(
-      queryParameters: {
-        'username': AppSession.username,
-        if (query.isNotEmpty) 'q': query,
-      },
+      queryParameters: {if (query.isNotEmpty) 'q': query},
     );
 
     try {
@@ -133,7 +134,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Future<List<_ProfileMini>> _fetchUsers([String q = '']) async {
     final uri = Uri.parse('${AppApi.users}/search/').replace(
       queryParameters: {
-        'username': AppSession.username,
         if (q.trim().isNotEmpty) 'q': q.trim(),
       },
     );
@@ -154,7 +154,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         extra: const {'Content-Type': 'application/json'},
       ),
       body: jsonEncode({
-        'username': AppSession.username,
         'peer_username': username,
       }),
     );
@@ -276,9 +275,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   Future<void> _deleteConversation(_Conversation item) async {
     await http.delete(
-      Uri.parse(
-        '${AppApi.chat}/${item.id}/delete/',
-      ).replace(queryParameters: {'username': AppSession.username}),
+      Uri.parse('${AppApi.chat}/${item.id}/delete/'),
       headers: AppSession.authHeaders(),
     );
     if (!mounted) return;
@@ -356,7 +353,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               title: Text(item.peer.fullName),
               subtitle: Text(
                 '${item.matchedCount} tin nhắn khớp',
-                style: const TextStyle(color: Color(0xFF4E81FF)),
+                style: const TextStyle(color: AppColors.primary),
               ),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => _pushChat(item, initialSearchQuery: query),
@@ -444,9 +441,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               if (item.unreadCount > 0)
                                 CircleAvatar(
                                   radius: 11,
+                                  backgroundColor: AppColors.primary,
                                   child: Text(
                                     '${item.unreadCount}',
-                                    style: const TextStyle(fontSize: 11),
+                                    style: const TextStyle(fontSize: 11, color: Colors.white),
                                   ),
                                 ),
                               PopupMenuButton<String>(
@@ -518,6 +516,9 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
   bool _showJumpToLatest = false;
   int? _lastMessageId;
   bool _forceScrollToBottom = false;
+  String? _pendingImageDataUri;
+  Uint8List? _pendingImageBytes;
+  bool _sending = false;
 
   @override
   void initState() {
@@ -609,12 +610,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
   Future<void> _loadMessages({bool silent = false}) async {
     if (!silent && mounted) setState(() => _loading = true);
 
-    final uri = Uri.parse('${AppApi.chat}/${widget.conversation.id}/messages/')
-        .replace(
-          queryParameters: {
-            'username': AppSession.username,
-          },
-        );
+    final uri = Uri.parse('${AppApi.chat}/${widget.conversation.id}/messages/');
 
     try {
       final res = await http
@@ -725,28 +721,82 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _pendingImageDataUri == null) return;
+    final payloadContent = _pendingImageDataUri == null
+        ? text
+        : jsonEncode({
+            'type': 'image',
+            'data': _pendingImageDataUri,
+            'caption': text,
+          });
+    setState(() => _sending = true);
 
     final res = await http.post(
       Uri.parse('${AppApi.chat}/${widget.conversation.id}/messages/'),
       headers: AppSession.authHeaders(
         extra: const {'Content-Type': 'application/json'},
       ),
-      body: jsonEncode({'username': AppSession.username, 'content': text}),
+      body: jsonEncode({'content': payloadContent}),
     );
 
+    if (!mounted) return;
     if (res.statusCode == 201) {
-      _controller.clear();
-      _forceScrollToBottom = true;
+      setState(() {
+        _controller.clear();
+        _pendingImageDataUri = null;
+        _pendingImageBytes = null;
+        _forceScrollToBottom = true;
+      });
       _loadMessages(silent: true);
     }
+    if (mounted) setState(() => _sending = false);
+  }
+
+  Future<void> _pickAndAttachImage(ImageSource source) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: source, imageQuality: 72);
+    if (image == null) return;
+    final bytes = await image.readAsBytes();
+    final ext = image.name.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+    if (!mounted) return;
+    setState(() {
+      _pendingImageBytes = bytes;
+      _pendingImageDataUri = 'data:image/$ext;base64,${base64Encode(bytes)}';
+    });
+  }
+
+  Future<void> _insertLink() async {
+    final ctl = TextEditingController();
+    final link = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Chèn liên kết'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'https://...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctl.text.trim()),
+            child: const Text('Chèn'),
+          ),
+        ],
+      ),
+    );
+    if (link == null || link.isEmpty) return;
+    final value = _controller.text.trim();
+    _controller.text = value.isEmpty ? link : '$value $link';
+    _controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: _controller.text.length),
+    );
+    setState(() {});
   }
 
   Future<void> _deleteConversationFromDetail() async {
     await http.delete(
-      Uri.parse(
-        '${AppApi.chat}/${widget.conversation.id}/delete/',
-      ).replace(queryParameters: {'username': AppSession.username}),
+      Uri.parse('${AppApi.chat}/${widget.conversation.id}/delete/'),
       headers: AppSession.authHeaders(),
     );
     if (!mounted) return;
@@ -829,12 +879,16 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
         _activeSearchMatchPointer >= 0 &&
         _activeSearchMatchPointer < _searchMatchIndexes.length &&
         _searchMatchIndexes[_activeSearchMatchPointer] == index;
+    final parsedImage = _extractImageBytes(msg.content);
+    final parsedLink = _extractFirstUrl(msg.content);
+    final isImageMessage = parsedImage != null;
+    final caption = _extractCaption(msg.content);
     return Container(
       constraints: const BoxConstraints(maxWidth: 240),
       margin: const EdgeInsets.symmetric(vertical: 3),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: mine ? const Color(0xFF4E81FF) : const Color(0xFFD8E3F2),
+        color: mine ? AppColors.primary : const Color(0xFFFFF2F6),
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(12),
           topRight: const Radius.circular(12),
@@ -845,11 +899,48 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          RichText(
-            text: TextSpan(
-              children: _buildMessageSpans(msg.content, mine, isActiveMatch),
+          if (isImageMessage) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.memory(parsedImage, fit: BoxFit.cover),
             ),
-          ),
+            if (caption.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                caption,
+                style: TextStyle(
+                  color: mine ? Colors.white : const Color(0xFF1C1C1C),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ] else
+            RichText(
+              text: TextSpan(
+                children: _buildMessageSpans(msg.content, mine, isActiveMatch),
+              ),
+            ),
+          if (parsedLink != null) ...[
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () async {
+                final uri = Uri.tryParse(parsedLink);
+                if (uri != null) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: Text(
+                parsedLink,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: mine ? Colors.white : AppColors.primaryDark,
+                  decoration: TextDecoration.underline,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
           Text(
             _fmt(msg.createdAt),
@@ -901,6 +992,37 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
         ],
       ),
     );
+  }
+
+  Uint8List? _extractImageBytes(String raw) {
+    try {
+      final parsed = jsonDecode(raw);
+      if (parsed is! Map<String, dynamic>) return null;
+      if ((parsed['type'] ?? '') != 'image') return null;
+      final data = (parsed['data'] ?? '').toString();
+      final base64Part = data.contains(',') ? data.split(',').last : data;
+      if (base64Part.isEmpty) return null;
+      return base64Decode(base64Part);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _extractCaption(String raw) {
+    try {
+      final parsed = jsonDecode(raw);
+      if (parsed is! Map<String, dynamic>) return '';
+      if ((parsed['type'] ?? '') != 'image') return '';
+      return (parsed['caption'] ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String? _extractFirstUrl(String raw) {
+    final pattern = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false);
+    final m = pattern.firstMatch(raw);
+    return m?.group(0);
   }
 
   Future<void> _handleMenuAction(String value) async {
@@ -971,7 +1093,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
                   if (_peerTyping)
                     const Text(
                       'đang nhập...',
-                      style: TextStyle(fontSize: 11, color: Colors.green),
+                      style: TextStyle(fontSize: 11, color: AppColors.primaryDark),
                     ),
                 ],
               ),
@@ -1101,13 +1223,47 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
               ),
               child: Row(
                 children: [
+                  if (_pendingImageBytes != null)
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              _pendingImageBytes!,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Positioned(
+                            top: -6,
+                            right: -6,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () => setState(() {
+                                _pendingImageBytes = null;
+                                _pendingImageDataUri = null;
+                              }),
+                              icon: const Icon(Icons.cancel, color: AppColors.primary, size: 18),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                    onPressed: _insertLink,
+                    icon: const Icon(Icons.link_rounded),
                   ),
                   IconButton(
-                    onPressed: () {},
+                    onPressed: () => _pickAndAttachImage(ImageSource.gallery),
                     icon: const Icon(Icons.attach_file_rounded),
+                  ),
+                  IconButton(
+                    onPressed: () => _pickAndAttachImage(ImageSource.camera),
+                    icon: const Icon(Icons.camera_alt_rounded),
                   ),
                   Expanded(
                     child: TextField(
@@ -1121,7 +1277,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
                           vertical: 12,
                         ),
                         filled: true,
-                        fillColor: const Color(0xFFF2F4F7),
+                        fillColor: const Color(0xFFFFF2F6),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide.none,
@@ -1136,7 +1292,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: IconButton(
-                      onPressed: _send,
+                      onPressed: _sending ? null : _send,
                       icon: const Icon(Icons.send_rounded, color: Colors.white),
                     ),
                   ),

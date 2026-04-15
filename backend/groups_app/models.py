@@ -8,7 +8,7 @@ class StudyGroup(models.Model):
     subject = models.CharField(max_length=100)
     category = models.CharField(max_length=100, blank=True)
     description = models.TextField()
-    avatar_url = models.URLField(blank=True)
+    avatar_url = models.TextField(blank=True)
     max_members = models.IntegerField(default=5)
     created_at = models.DateTimeField(auto_now_add=True)
 

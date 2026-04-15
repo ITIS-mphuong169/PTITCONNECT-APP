@@ -26,18 +26,22 @@ class _MicrosoftLoginWebViewScreenState
   @override
   void initState() {
     super.initState();
+    final normalizedHint = widget.emailHint.trim();
+    final queryParams = <String, String>{
+      'client_id': _clientId,
+      'response_type': 'code',
+      'redirect_uri': _redirectUri,
+      'response_mode': 'query',
+      'scope': 'openid profile email',
+      'prompt': 'select_account',
+    };
+    if (normalizedHint.contains('@')) {
+      queryParams['login_hint'] = normalizedHint;
+    }
     _loginUri = Uri.https(
       'login.microsoftonline.com',
       '/common/oauth2/v2.0/authorize',
-      {
-        'client_id': _clientId,
-        'response_type': 'code',
-        'redirect_uri': _redirectUri,
-        'response_mode': 'query',
-        'scope': 'openid profile email',
-        'prompt': 'select_account',
-        'login_hint': widget.emailHint,
-      },
+      queryParams,
     );
 
     if (!kIsWeb) {

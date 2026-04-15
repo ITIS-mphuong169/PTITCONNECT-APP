@@ -1,9 +1,10 @@
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin, urlparse
 import xml.etree.ElementTree as ET
 
 import requests
 from bs4 import BeautifulSoup
 from django.db.models import Q
+from django.http import HttpResponse
 from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import get_object_or_404
@@ -27,7 +28,43 @@ class AutoFeedView(APIView):
     def get(self, request):
         limit = min(int(request.query_params.get("limit", 12)), 30)
         items = _fetch_news(limit)
+        for item in items:
+            image_url = (item.get("image_url") or "").strip()
+            if image_url:
+                item["image_url"] = request.build_absolute_uri(
+                    f"/api/community/image-proxy/?url={quote(image_url, safe='')}"
+                )
         return Response({"count": len(items), "results": items}, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def news_image_proxy_api(request):
+    raw_url = (request.query_params.get("url") or "").strip()
+    if not raw_url:
+        return Response({"detail": "url is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in ("http", "https"):
+        return Response({"detail": "invalid url scheme"}, status=status.HTTP_400_BAD_REQUEST)
+    if not parsed.netloc.endswith("ptit.edu.vn"):
+        return Response({"detail": "only ptit.edu.vn is allowed"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        upstream = requests.get(
+            raw_url,
+            timeout=10,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; PTITConnectBot/1.0)",
+                "Referer": "https://ptit.edu.vn/",
+            },
+        )
+        upstream.raise_for_status()
+    except Exception:
+        return Response({"detail": "failed to fetch image"}, status=status.HTTP_502_BAD_GATEWAY)
+
+    content_type = upstream.headers.get("Content-Type", "image/jpeg")
+    return HttpResponse(upstream.content, content_type=content_type)
 
 
 @api_view(["GET", "POST"])
@@ -180,6 +217,8 @@ def _fetch_from_rss(limit):
                 enclosure = node.find("enclosure")
                 if enclosure is not None:
                     image_url = enclosure.attrib.get("url")
+                if not image_url and link:
+                    image_url = _extract_image_from_article(link)
 
                 if title and link:
                     items.append(
@@ -224,7 +263,7 @@ def _fetch_from_homepage(limit):
                     "url": full_url,
                     "summary": "",
                     "published_at": "",
-                    "image_url": None,
+                    "image_url": _extract_image_from_article(full_url),
                     "source": "ptit.edu.vn",
                 }
             )
@@ -246,5 +285,57 @@ def _strip_html(raw):
     if not raw:
         return ""
     return BeautifulSoup(raw, "html.parser").get_text(" ", strip=True)
+
+
+def _extract_image_from_article(article_url):
+    try:
+        response = requests.get(article_url, timeout=8)
+        response.raise_for_status()
+    except Exception:
+        return None
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # Prefer OpenGraph/Twitter images first for stable preview quality.
+    for selector, attr in [
+        ('meta[property="og:image"]', "content"),
+        ('meta[property="og:image:secure_url"]', "content"),
+        ('meta[name="twitter:image"]', "content"),
+    ]:
+        node = soup.select_one(selector)
+        if node:
+            raw = (node.get(attr) or "").strip()
+            if raw:
+                return urljoin(article_url, raw)
+
+    first_img = soup.select_one("article img, .entry-content img, .post-content img, img")
+    if first_img:
+        raw = (
+            first_img.get("src")
+            or first_img.get("data-src")
+            or first_img.get("data-lazy-src")
+            or first_img.get("data-original")
+            or ""
+        ).strip()
+        if raw:
+            return urljoin(article_url, raw)
+
+    # Some PTIT pages render the banner as CSS background-image.
+    for node in soup.select("[style*='background-image']"):
+        style = (node.get("style") or "").strip()
+        marker = "background-image"
+        idx = style.lower().find(marker)
+        if idx < 0:
+            continue
+        segment = style[idx:]
+        start = segment.find("url(")
+        end = segment.find(")", start + 4)
+        if start < 0 or end < 0:
+            continue
+        raw = segment[start + 4 : end].strip().strip('"').strip("'")
+        if raw:
+            return urljoin(article_url, raw)
+
+    return None
 
 

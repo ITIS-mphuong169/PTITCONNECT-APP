@@ -9,6 +9,7 @@ import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/messages_screen.dart';
 import 'package:mobile_app/screens/profile_screen.dart';
+import 'package:mobile_app/theme/app_theme.dart';
 
 Widget _avatar(String name, {double radius = 20}) {
   return initialsAvatar(name, radius: radius);
@@ -76,37 +77,33 @@ class _FriendsScreenState extends State<FriendsScreen>
   Future<void> _load({bool silent = false}) async {
     if (!silent && mounted) setState(() => _loading = true);
 
-    final params = {'username': AppSession.username};
-
     try {
       final results = await Future.wait([
         http.get(
-          Uri.parse(
-            '${AppApi.users}/friends/requests/inbox/',
-          ).replace(queryParameters: params),
+          Uri.parse('${AppApi.users}/friends/requests/inbox/'),
           headers: AppSession.authHeaders(),
         ),
         http.get(
-          Uri.parse(
-            '${AppApi.users}/friends/requests/sent/',
-          ).replace(queryParameters: params),
+          Uri.parse('${AppApi.users}/friends/requests/sent/'),
           headers: AppSession.authHeaders(),
         ),
         http.get(
-          Uri.parse(
-            '${AppApi.users}/friends/',
-          ).replace(queryParameters: params),
+          Uri.parse('${AppApi.users}/friends/'),
           headers: AppSession.authHeaders(),
         ),
         http.get(
-          Uri.parse(
-            '${AppApi.users}/friends/suggestions/',
-          ).replace(queryParameters: params),
+          Uri.parse('${AppApi.users}/friends/suggestions/'),
           headers: AppSession.authHeaders(),
         ),
       ]);
 
       if (!mounted) return;
+
+      if (results.any((res) => res.statusCode >= 400)) {
+        setState(() => _loading = false);
+        _showSnack('Không tải được danh sách bạn bè, vui lòng thử lại.');
+        return;
+      }
 
       _requests = (jsonDecode(results[0].body) as List)
           .map((e) => _RequestItem.fromJson(e, incoming: true))
@@ -244,27 +241,35 @@ class _FriendsScreenState extends State<FriendsScreen>
   // ================= API =================
 
   Future<void> _decide(_RequestItem item, String action) async {
-    await http.post(
+    final res = await http.post(
       Uri.parse('${AppApi.users}/friends/requests/${item.id}/decide/'),
       headers: AppSession.authHeaders(
         extra: const {'Content-Type': 'application/json'},
       ),
-      body: jsonEncode({'username': AppSession.username, 'action': action}),
+      body: jsonEncode({'action': action}),
     );
+    if (res.statusCode >= 400) {
+      _showSnack('Không thể cập nhật lời mời kết bạn.');
+      return;
+    }
     _load();
   }
 
   Future<void> _sendRequest(String username) async {
-    await http.post(
+    final res = await http.post(
       Uri.parse('${AppApi.users}/friends/requests/send/'),
       headers: AppSession.authHeaders(
         extra: const {'Content-Type': 'application/json'},
       ),
       body: jsonEncode({
-        'username': AppSession.username,
         'to_username': username,
       }),
     );
+    if (res.statusCode >= 400) {
+      _showSnack('Không gửi được lời mời kết bạn.');
+      return;
+    }
+    _showSnack('Đã gửi lời mời kết bạn.');
     _load();
     if (_searchController.text.trim().isNotEmpty) {
       await _searchUsers(_searchController.text.trim());
@@ -288,7 +293,6 @@ class _FriendsScreenState extends State<FriendsScreen>
     try {
       final uri = Uri.parse('${AppApi.users}/search/').replace(
         queryParameters: {
-          'username': AppSession.username,
           'q': q,
         },
       );
@@ -346,6 +350,11 @@ class _FriendsScreenState extends State<FriendsScreen>
         ),
       ),
     );
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildFriendsTab() {
@@ -497,7 +506,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               _actionCircleButton(
                                 icon: Icons.close_rounded,
                                 background: Colors.white,
-                                iconColor: const Color(0xFF4E81FF),
+                                iconColor: AppColors.primary,
                                 onTap: () {
                                   setState(() {
                                     _hiddenSuggestionUsernames.add(s.username);
@@ -513,7 +522,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               const SizedBox(width: 8),
                               _actionCircleButton(
                                 icon: Icons.person_add_alt_1_rounded,
-                                background: const Color(0xFF4E81FF),
+                                background: AppColors.primary,
                                 onTap: () => _sendRequest(s.username),
                               ),
                             ],
@@ -550,8 +559,19 @@ class _FriendsScreenState extends State<FriendsScreen>
               children: [
                 _buildFriendsTab(),
                 ListView(
-                  children: _requests
-                      .map(
+                  children: [
+                    const ListTile(
+                      title: Text(
+                        'Lời mời nhận được',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    if (_requests.isEmpty)
+                      const ListTile(
+                        title: Text('Không có lời mời nào'),
+                      )
+                    else
+                      ..._requests.map(
                         (e) => ListTile(
                           leading: _avatar(
                             e.profile.fullName.isEmpty
@@ -571,13 +591,13 @@ class _FriendsScreenState extends State<FriendsScreen>
                               _actionCircleButton(
                                 icon: Icons.close_rounded,
                                 background: Colors.white,
-                                iconColor: const Color(0xFF4E81FF),
+                                iconColor: AppColors.primary,
                                 onTap: () => _decide(e, 'reject'),
                               ),
                               const SizedBox(width: 8),
                               _actionCircleButton(
                                 icon: Icons.check_rounded,
-                                background: const Color(0xFF4E81FF),
+                                background: AppColors.primary,
                                 onTap: () => _decide(e, 'accept'),
                               ),
                             ],
@@ -585,8 +605,40 @@ class _FriendsScreenState extends State<FriendsScreen>
                           onTap: () =>
                               _openUserCard(e.profile, 'request', request: e),
                         ),
+                      ),
+                    const Divider(height: 24),
+                    const ListTile(
+                      title: Text(
+                        'Đã gửi',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    if (_sent.isEmpty)
+                      const ListTile(
+                        title: Text('Bạn chưa gửi lời mời nào'),
                       )
-                      .toList(),
+                    else
+                      ..._sent.map(
+                        (e) => ListTile(
+                          leading: _avatar(
+                            e.profile.fullName.isEmpty
+                                ? e.profile.username
+                                : e.profile.fullName,
+                          ),
+                          title: Text(
+                            e.profile.fullName,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            '${e.profile.studentId} • ${e.profile.email}',
+                          ),
+                          trailing: const Text(
+                            'Đang chờ',
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 _buildAddFriendTab(),
               ],

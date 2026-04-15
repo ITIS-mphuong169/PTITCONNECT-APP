@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/theme/app_theme.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final void Function(Map<String, dynamic> newPost)? onPostCreated;
@@ -182,7 +183,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               child: ElevatedButton(
                 onPressed: _isPosting ? null : _submitPost,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue, 
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: _isPosting

@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.contrib.auth.models import User
 from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import get_object_or_404
@@ -8,12 +9,15 @@ from core.demo_auth import resolve_demo_user
 
 from .models import GroupMember, JoinRequest, StudyGroup
 from .serializers import JoinRequestSerializer, StudyGroupSerializer
+from community.models import Post
+from community.serializers import PostSerializer
 
 
 @api_view(["GET", "POST"])
 @permission_classes([permissions.IsAuthenticated])
 def groups_api(request):
     if request.method == "GET":
+        actor = resolve_demo_user(request)
         qs = StudyGroup.objects.all()
         subject = request.query_params.get("subject", "").strip()
         category = request.query_params.get("category", "").strip()
@@ -24,7 +28,9 @@ def groups_api(request):
             qs = qs.filter(category__iexact=category)
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q))
-        return Response(StudyGroupSerializer(qs[:100], many=True).data)
+        return Response(
+            StudyGroupSerializer(qs[:100], many=True, context={"user": actor}).data
+        )
 
     actor = resolve_demo_user(request)
     title = (request.data.get("title") or "").strip()
@@ -56,7 +62,8 @@ def groups_api(request):
 def group_detail_api(request, pk):
     g = get_object_or_404(StudyGroup, pk=pk)
     if request.method == "GET":
-        return Response(StudyGroupSerializer(g).data)
+        actor = resolve_demo_user(request)
+        return Response(StudyGroupSerializer(g, context={"user": actor}).data)
 
     actor = resolve_demo_user(request)
     if g.owner_id != actor.id:
@@ -92,6 +99,64 @@ def group_join_api(request, pk):
         jr.status = "pending"
         jr.save()
     return Response(JoinRequestSerializer(jr).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def group_members_api(request, pk):
+    group = get_object_or_404(StudyGroup, pk=pk)
+    users = (
+        User.objects.filter(group_memberships__group=group)
+        .distinct()
+        .order_by("username")
+    )
+    data = [{"username": u.username, "is_owner": group.owner_id == u.id} for u in users]
+    return Response({"results": data})
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def group_posts_api(request, pk):
+    group = get_object_or_404(StudyGroup, pk=pk)
+    actor = resolve_demo_user(request)
+    posts = Post.objects.filter(
+        Q(topic__icontains=group.title)
+        | Q(topic__icontains=group.subject)
+        | Q(content__icontains=f"#{group.title}")
+    ).order_by("-created_at")[:30]
+    return Response(PostSerializer(posts, many=True, context={"request": request, "user": actor}).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def group_invite_api(request, pk):
+    group = get_object_or_404(StudyGroup, pk=pk)
+    actor = resolve_demo_user(request)
+    if group.owner_id != actor.id:
+        return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+    target_username = (request.data.get("target_username") or "").strip().lower()
+    if not target_username:
+        return Response({"detail": "target_username required"}, status=status.HTTP_400_BAD_REQUEST)
+    if target_username == actor.username:
+        return Response({"detail": "cannot invite yourself"}, status=status.HTTP_400_BAD_REQUEST)
+
+    target_user = User.objects.filter(username=target_username).first()
+    if target_user is None:
+        return Response({"detail": "user not found"}, status=status.HTTP_404_NOT_FOUND)
+    if GroupMember.objects.filter(group=group, user=target_user).exists():
+        return Response({"detail": "already member"}, status=status.HTTP_400_BAD_REQUEST)
+
+    invite, created = JoinRequest.objects.get_or_create(
+        group=group,
+        user=target_user,
+        defaults={"status": "pending"},
+    )
+    if not created and invite.status != "pending":
+        invite.status = "pending"
+        invite.save(update_fields=["status"])
+
+    return Response(JoinRequestSerializer(invite).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])

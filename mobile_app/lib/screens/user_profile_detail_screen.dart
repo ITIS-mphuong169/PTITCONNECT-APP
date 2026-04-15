@@ -6,25 +6,30 @@ class UserProfileDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final className = user['class_code'] ?? 'D22CNPM01';
+    final major = user['major'] ?? 'CNTT';
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(backgroundColor: Colors.white, elevation: 0, foregroundColor: Colors.black),
       body: Column(
         children: [
-          const CircleAvatar(radius: 50, backgroundImage: NetworkImage('https://picsum.photos/200')),
+          CircleAvatar(
+            radius: 50,
+            backgroundImage: NetworkImage(user['avatar_url'] ?? 'https://picsum.photos/200?random=99'),
+          ),
           const SizedBox(height: 15),
-          Text(user['name'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const Text("Sinh viên năm 3 - Hà Nội", style: TextStyle(color: Colors.grey)),
+          Text(user['name'] ?? 'Sinh viên', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          Text("$className - Khoa $major", style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 30),
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              Column(children: [Text("122", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Text("Nhóm tham gia")]),
-              Column(children: [Text("67", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Text("Cộng đồng tham gia")]),
+              Column(children: [Text("2", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Text("Nhóm tham gia")]),
+              Column(children: [Text("5", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Text("Bài viết cộng đồng")]),
             ],
           ),
           const Spacer(),
-          // THANH CÔNG CỤ DƯỚI CÙNG (Hình 2)
           Container(
             padding: const EdgeInsets.all(20),
             child: Row(
@@ -52,7 +57,6 @@ class UserProfileDetailScreen extends StatelessWidget {
     );
   }
 
-  // --- LUỒNG POP-UP KHÓA TÀI KHOẢN ---
   void _confirmLock(BuildContext context) {
     showDialog(
       context: context,
@@ -111,8 +115,8 @@ class UserProfileDetailScreen extends StatelessWidget {
       ),
     );
     Future.delayed(const Duration(seconds: 1), () {
-      Navigator.pop(context); // Đóng popup success
-      Navigator.pop(context, "deleted"); // Thoát về màn hình tìm kiếm
+      Navigator.pop(context);
+      Navigator.pop(context, "deleted");
     });
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'admin_moderation_screen.dart'; 
+import 'package:mobile_app/screens/login_screen.dart';
+import 'admin_moderation_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -22,10 +23,56 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     ];
   }
 
+  void _handleLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("Đăng xuất", textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text("Bạn có chắc chắn muốn đăng xuất khỏi trang Quản trị?", textAlign: TextAlign.center),
+        actionsAlignment: MainAxisAlignment.spaceEvenly,
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade300, foregroundColor: Colors.black87, elevation: 0),
+            child: const Text("Hủy"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF3B5C), elevation: 0),
+            child: const Text("Đăng xuất", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text("P-Connect Admin", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, fontSize: 20)),
+        centerTitle: false,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: IconButton(
+              tooltip: "Đăng xuất",
+              icon: const Icon(Icons.logout_rounded, color: Color(0xFFFF3B5C)),
+              onPressed: () => _handleLogout(context),
+            ),
+          )
+        ],
+      ),
       body: IndexedStack(index: _selectedIndex, children: _screens),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -174,17 +221,17 @@ class _DashboardBodyState extends State<DashboardBody> {
       children: [
         Row(
           children: [
-            _buildStatCard('4,250', 'Sinh viên', Icons.people_alt_rounded),
+            _buildStatCard('100', 'Sinh viên', Icons.people_alt_rounded),
             const SizedBox(width: 16),
-            _buildStatCard('850', 'Tương tác 24h', Icons.forum_rounded),
+            _buildStatCard('124', 'Tương tác 24h', Icons.forum_rounded),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           children: [
-            _buildStatCard('120', 'Tài liệu mới', Icons.description_rounded),
+            _buildStatCard('30', 'Tài liệu mới', Icons.description_rounded),
             const SizedBox(width: 16),
-            _buildStatCard('45%', 'DAU/MAU', Icons.trending_up_rounded),
+            _buildStatCard('65%', 'DAU/MAU', Icons.trending_up_rounded),
           ],
         ),
       ],
@@ -222,7 +269,7 @@ class _DashboardBodyState extends State<DashboardBody> {
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
-          maxY: 100,
+          maxY: 20,
           barTouchData: BarTouchData(
             enabled: true,
             touchTooltipData: BarTouchTooltipData(
@@ -252,10 +299,10 @@ class _DashboardBodyState extends State<DashboardBody> {
           gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (v) => FlLine(color: Colors.grey.withOpacity(0.1), strokeWidth: 1)),
           borderData: FlBorderData(show: false),
           barGroups: [
-            _makeSimpleBar(0, 85, Colors.orange),
-            _makeSimpleBar(1, 40, const Color(0xFFFF3B5C)),
-            _makeSimpleBar(2, 20, Colors.red[900]!),
-            _makeSimpleBar(3, 15, Colors.grey),
+            _makeSimpleBar(0, 5, Colors.orange),
+            _makeSimpleBar(1, 2, const Color(0xFFFF3B5C)),
+            _makeSimpleBar(2, 1, Colors.red[900]!),
+            _makeSimpleBar(3, 3, Colors.grey),
           ],
         ),
       ),
@@ -280,7 +327,7 @@ class _DashboardBodyState extends State<DashboardBody> {
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
-        maxY: 500,
+        maxY: 120,
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
@@ -295,10 +342,10 @@ class _DashboardBodyState extends State<DashboardBody> {
         gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (v) => FlLine(color: Colors.grey.withOpacity(0.1), strokeWidth: 1)),
         borderData: FlBorderData(show: false),
         barGroups: [
-          _makeSimpleBar(0, 150, const Color(0xFF7BB4FF)),
-          _makeSimpleBar(1, 300, const Color(0xFF7BB4FF)),
-          _makeSimpleBar(2, 450, const Color(0xFF7BB4FF)),
-          _makeSimpleBar(3, 200, const Color(0xFF7BB4FF)),
+          _makeSimpleBar(0, 20, const Color(0xFF7BB4FF)),
+          _makeSimpleBar(1, 45, const Color(0xFF7BB4FF)),
+          _makeSimpleBar(2, 80, const Color(0xFF7BB4FF)),
+          _makeSimpleBar(3, 100, const Color(0xFF7BB4FF)),
         ],
       ),
     );
@@ -307,7 +354,7 @@ class _DashboardBodyState extends State<DashboardBody> {
   Widget _buildDailyLineChart() {
     return LineChart(
       LineChartData(
-        minY: 0, maxY: 100,
+        minY: 0, maxY: 30,
         lineTouchData: LineTouchData(
           enabled: true,
           touchTooltipData: LineTouchTooltipData(getTooltipColor: (touchedSpot) => Colors.black87),
@@ -328,7 +375,7 @@ class _DashboardBodyState extends State<DashboardBody> {
         borderData: FlBorderData(show: false),
         lineBarsData: [
           LineChartBarData(
-            spots: const [FlSpot(1, 10), FlSpot(5, 15), FlSpot(10, 85), FlSpot(15, 30), FlSpot(20, 25), FlSpot(25, 40), FlSpot(30, 20)],
+            spots: const [FlSpot(1, 2), FlSpot(5, 5), FlSpot(10, 12), FlSpot(15, 18), FlSpot(20, 22), FlSpot(25, 28), FlSpot(30, 25)],
             isCurved: true,
             color: const Color(0xFFFF3B5C),
             barWidth: 3,
@@ -346,7 +393,7 @@ class _DashboardBodyState extends State<DashboardBody> {
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
-        maxY: 100,
+        maxY: 120,
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (v, m) => Text('Tháng ${v.toInt() + 8}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)))),
           leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -400,11 +447,11 @@ class _DashboardBodyState extends State<DashboardBody> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildIndicator(const Color(0xFF7BB4FF), 'Hỏi đáp'),
+            _buildIndicator(const Color(0xFF7BB4FF), 'Học tập (ATTT, CNTT)'),
             const SizedBox(height: 8),
-            _buildIndicator(const Color(0xFF65E0C2), 'Tài liệu'),
+            _buildIndicator(const Color(0xFF65E0C2), 'Tài liệu (Slide, Đề thi)'),
             const SizedBox(height: 8),
-            _buildIndicator(const Color(0xFFFF3B5C), 'Tán gẫu'),
+            _buildIndicator(const Color(0xFFFF3B5C), 'Hỏi đáp/Tán gẫu'),
           ],
         )
       ],
@@ -472,9 +519,9 @@ class _DashboardBodyState extends State<DashboardBody> {
               DataColumn(label: Text('Tháng 3', style: TextStyle(fontWeight: FontWeight.bold))),
             ],
             rows: [
-              _buildCohortRow('Sinh viên Th 8 (400)', [100, 65, 40]),
-              _buildCohortRow('Sinh viên Th 9 (650)', [100, 50, 20]),
-              _buildCohortRow('Sinh viên Th 10 (200)', [100, 85, null]),
+              _buildCohortRow('Sinh viên K21 (20)', [100, 75, 50]),
+              _buildCohortRow('Sinh viên K22 (50)', [100, 80, 60]),
+              _buildCohortRow('Sinh viên K23 (30)', [100, 90, null]),
             ],
           ),
         ),
@@ -508,9 +555,9 @@ class _DashboardBodyState extends State<DashboardBody> {
   // ==================== MODULE 4: XU HƯỚNG TÌM KIẾM ====================
   Widget _buildModule4SearchTrends() {
     List<Map<String, dynamic>> trends = [
-      {'rank': 1, 'keyword': 'Đồ án cơ sở dữ liệu', 'count': '1,200', 'isUp': true},
-      {'rank': 2, 'keyword': 'Đề thi Mạng máy tính', 'count': '980', 'isUp': true},
-      {'rank': 3, 'keyword': 'Nhà trọ quanh PTIT', 'count': '650', 'isUp': false},
+      {'rank': 1, 'keyword': 'Tài liệu Flutter', 'count': '68', 'isUp': true},
+      {'rank': 2, 'keyword': 'Slide mạng máy tính', 'count': '45', 'isUp': true},
+      {'rank': 3, 'keyword': 'Tìm nhóm bài tập', 'count': '21', 'isUp': false},
     ];
 
     return Container(

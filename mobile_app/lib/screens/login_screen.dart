@@ -6,6 +6,7 @@ import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/admin_dashboard_screen.dart';
 import 'package:mobile_app/screens/home_shell_screen.dart';
+import 'package:mobile_app/screens/microsoft_login_webview_screen.dart';
 class LoginScreen extends StatefulWidget {
   static const routeName = '/login';
 
@@ -21,6 +22,26 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isSubmitting = false;
+
+  Future<void> _onMicrosoftLoginPressed() async {
+    final emailHint = _emailController.text.trim();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MicrosoftLoginWebViewScreen(
+          emailHint: emailHint,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Đăng nhập Outlook đang ở chế độ demo do chưa access domain.',
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -126,22 +147,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 28),
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAF5FF),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFB9DFFF)),
-                      ),
-                      child: const Text(
-                        'Đăng nhập thật với tài khoản backend. Username dùng phần trước dấu @ trong email.',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                    ),
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -237,17 +242,41 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 12),
                     Center(
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF2FF),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: const Icon(
-                          Icons.school_outlined,
-                          color: Color(0xFF0C75D8),
-                        ),
+                      child: Column(
+                        children: [
+                          InkWell(
+                            onTap: _onMicrosoftLoginPressed,
+                            borderRadius: BorderRadius.circular(22),
+                            child: Ink(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEAF2FF),
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: const Icon(
+                                Icons.mark_email_read_outlined,
+                                color: Color(0xFF0C75D8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Đăng nhập Outlook (demo)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Chưa access domain',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF0C75D8),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
