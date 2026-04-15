@@ -28,7 +28,7 @@ DEFAULT_CATEGORIES = [
 
 
 @api_view(["GET", "POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def documents_api(request):
     if request.method == "GET":
         qs = Document.objects.all()
@@ -82,7 +82,7 @@ def documents_api(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def document_detail_api(request, pk):
     doc = get_object_or_404(Document, pk=pk)
     if request.method == "GET":
@@ -109,7 +109,7 @@ def document_detail_api(request, pk):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def document_subjects_api(request):
     db_subjects = (
         Document.objects.exclude(subject__exact="")

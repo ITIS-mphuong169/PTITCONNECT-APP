@@ -13,7 +13,7 @@ class RegisterView(generics.CreateAPIView):
 
 class ProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ProfileSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         target_username = (self.request.query_params.get("target_username") or "").strip().lower()

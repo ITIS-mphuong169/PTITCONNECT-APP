@@ -11,7 +11,7 @@ from .serializers import JoinRequestSerializer, StudyGroupSerializer
 
 
 @api_view(["GET", "POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def groups_api(request):
     if request.method == "GET":
         qs = StudyGroup.objects.all()
@@ -52,7 +52,7 @@ def groups_api(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def group_detail_api(request, pk):
     g = get_object_or_404(StudyGroup, pk=pk)
     if request.method == "GET":
@@ -79,7 +79,7 @@ def group_detail_api(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def group_join_api(request, pk):
     group = get_object_or_404(StudyGroup, pk=pk)
     actor = resolve_demo_user(request)
@@ -95,7 +95,7 @@ def group_join_api(request, pk):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def group_join_requests_api(request, pk):
     group = get_object_or_404(StudyGroup, pk=pk)
     actor = resolve_demo_user(request)
@@ -106,7 +106,7 @@ def group_join_requests_api(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def group_join_decide_api(request, pk, request_id):
     group = get_object_or_404(StudyGroup, pk=pk)
     actor = resolve_demo_user(request)

@@ -22,7 +22,7 @@ PTIT_RSS_URLS = [
 
 
 class AutoFeedView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         limit = min(int(request.query_params.get("limit", 12)), 30)
@@ -31,7 +31,7 @@ class AutoFeedView(APIView):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def posts_api(request):
     if request.method == "GET":
         keyword = request.query_params.get("q", "").strip()
@@ -64,7 +64,7 @@ def posts_api(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def post_detail_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
     actor = resolve_demo_user(request)
@@ -103,7 +103,7 @@ def post_detail_api(request, post_id):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def post_comment_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
     actor = resolve_demo_user(request)
@@ -121,7 +121,7 @@ def post_comment_api(request, post_id):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def post_react_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
     actor = resolve_demo_user(request)
@@ -137,7 +137,7 @@ def post_react_api(request, post_id):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def post_save_api(request, post_id):
     post = get_object_or_404(Post, id=post_id)
     actor = resolve_demo_user(request)

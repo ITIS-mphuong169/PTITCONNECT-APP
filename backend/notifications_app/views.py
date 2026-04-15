@@ -11,7 +11,7 @@ from .realtime import notify_user
 
 
 @api_view(["GET", "POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def notifications_api(request):
     me = resolve_demo_user(request)
     if request.method == "GET":
@@ -35,7 +35,7 @@ def notifications_api(request):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def notification_read_api(request, pk):
     me = resolve_demo_user(request)
     n = get_object_or_404(Notification, pk=pk, user=me)
@@ -47,7 +47,7 @@ def notification_read_api(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def notifications_read_all_api(request):
     me = resolve_demo_user(request)
     Notification.objects.filter(user=me, is_read=False).update(is_read=True)
@@ -56,7 +56,7 @@ def notifications_read_all_api(request):
 
 
 @api_view(["DELETE"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def notification_delete_api(request, pk):
     me = resolve_demo_user(request)
     n = get_object_or_404(Notification, pk=pk, user=me)

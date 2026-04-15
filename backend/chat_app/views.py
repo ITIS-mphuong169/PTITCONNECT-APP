@@ -30,7 +30,7 @@ def _get_or_create_conversation(user_a, user_b):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def conversations_api(request):
     me = resolve_demo_user(request)
     q = (request.query_params.get("q") or "").strip()
@@ -55,7 +55,7 @@ def conversations_api(request):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def conversation_open_api(request):
     me = resolve_demo_user(request)
     peer_username = (request.data.get("peer_username") or request.data.get("target_username") or "").strip().lower()
@@ -73,7 +73,7 @@ def conversation_open_api(request):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def messages_api(request, pk):
     me = resolve_demo_user(request)
     conv = get_object_or_404(Conversation, pk=pk)
@@ -112,7 +112,7 @@ def messages_api(request, pk):
 
 
 @api_view(["DELETE"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def conversation_delete_api(request, pk):
     me = resolve_demo_user(request)
     conv = get_object_or_404(Conversation, pk=pk)
