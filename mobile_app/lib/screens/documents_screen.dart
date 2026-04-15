@@ -75,9 +75,20 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Future<void> _openDoc(_DocumentItem doc) async {
-    final url = doc.fileUrl;
-    if (url == null || url.isEmpty) return;
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    try {
+      await http.post(
+        Uri.parse('${AppApi.host}/api/documents/${doc.id}/view/'),
+      );
+    } catch (e) {
+      print("View error: $e");
+    }
+
+    // ✅ chỉ dùng fileUrl
+    if (doc.fileUrl != null) {
+      await launchUrl(Uri.parse(doc.fileUrl!));
+    }
+
+    _loadDocs();
   }
 
   String _normalizeDropdownLabel(String value) {
@@ -151,7 +162,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       DropdownMenuItem(value: 'slide', child: Text('Slide', style: TextStyle(fontWeight: FontWeight.normal))),
                       DropdownMenuItem(value: 'report', child: Text('Báo cáo', style: TextStyle(fontWeight: FontWeight.normal))),
                       DropdownMenuItem(value: 'exam', child: Text('Đề thi', style: TextStyle(fontWeight: FontWeight.normal))),
-                      DropdownMenuItem(value: 'note', child: Text('Ghi chú', style: TextStyle(fontWeight: FontWeight.normal))),
+                      DropdownMenuItem(value: 'note', child: Text('Bài giảng', style: TextStyle(fontWeight: FontWeight.normal))),
                       DropdownMenuItem(value: 'other', child: Text('Khác', style: TextStyle(fontWeight: FontWeight.normal))),
                     ],
                     onChanged: (v) =>
@@ -250,7 +261,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('#Tài liệu'),
+        title: const Text('Tài liệu'),
         actions: [
           IconButton(
             onPressed: _showUploadDialog,
@@ -295,27 +306,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     }).toList(),
                   ),
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 42,
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    scrollDirection: Axis.horizontal,
-                    children: _categories.map((s) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(s == 'All' ? '#Danh_mục' : '#$s'),
-                          selected: _selectedCategory == s,
-                          onSelected: (_) {
-                            setState(() => _selectedCategory = s);
-                            _loadDocs();
-                          },
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
+                
                 const SizedBox(height: 6),
                 Expanded(
                   child: ListView.separated(
@@ -345,7 +336,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                             Row(
                               children: [
                                 Text(
-                                  '${d.downloadCount} lượt tải',
+                                  '${d.downloadCount} lượt xem',
                                   style: TextStyle(
                                     color: Colors.grey.shade700,
                                     fontSize: 12,
@@ -511,7 +502,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 DropdownMenuItem(value: 'slide', child: Text('Slide', style: TextStyle(fontWeight: FontWeight.normal))),
                 DropdownMenuItem(value: 'report', child: Text('Báo cáo', style: TextStyle(fontWeight: FontWeight.normal))),
                 DropdownMenuItem(value: 'exam', child: Text('Đề thi', style: TextStyle(fontWeight: FontWeight.normal))),
-                DropdownMenuItem(value: 'note', child: Text('Ghi chú', style: TextStyle(fontWeight: FontWeight.normal))),
+                DropdownMenuItem(value: 'note', child: Text('Bài giảng', style: TextStyle(fontWeight: FontWeight.normal))),
                 DropdownMenuItem(value: 'other', child: Text('Khác', style: TextStyle(fontWeight: FontWeight.normal))),
               ],
               onChanged: (v) => docType = v ?? docType,
