@@ -684,55 +684,118 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
 
   Widget _buildCommentThread(_Comment comment, {int level = 0}) {
     final indent = 16.0 * level;
+
     final timeStr = comment.createdAt != null && comment.createdAt!.isNotEmpty
         ? _formatRelativeTime(comment.createdAt!)
         : '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.person, size: 18)),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(comment.author),
-              ),
-              if (timeStr.isNotEmpty)
-                Text(
-                  ' | $timeStr',
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    fontSize: 12,
-                  ),
+        Stack(
+          children: [
+            /// 🔥 LINE (Facebook style)
+            if (level > 0)
+              Positioned(
+                left: indent + 20, // vị trí line theo avatar
+                top: 0,
+                bottom: 0,
+                child: Column(
+                  children: [
+                    /// đoạn cong
+                    Container(
+                      width: 12,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(color: Colors.grey.shade300, width: 1.2),
+                          bottom: BorderSide(color: Colors.grey.shade300, width: 1.2),
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(10),
+                        ),
+                      ),
+                    ),
+
+                    /// line dọc xuống
+                    Expanded(
+                      child: Container(
+                        width: 1.2,
+                        color: Colors.grey.shade300,
+                      ),
+                    ),
+                  ],
                 ),
-            ],
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 2),
-              Text(comment.content),
-              const SizedBox(height: 4),
-              InkWell(
-                onTap: () => _showReplyDialog(comment),
-                child: const Text(
-                  'Trả lời',
-                  style: TextStyle(
-                    color: Colors.blue,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
               ),
-            ],
-          ),
-          contentPadding: EdgeInsets.fromLTRB(indent + 12, 0, 12, 0),
-          minLeadingWidth: 32,
-          horizontalTitleGap: 8,
-          dense: true,
+
+            /// 🔥 COMMENT
+            ListTile(
+              leading: const CircleAvatar(
+                radius: 16,
+                child: Icon(Icons.person, size: 16),
+              ),
+
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      comment.author,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (timeStr.isNotEmpty)
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
+              ),
+
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 2),
+                  Text(
+                    comment.content,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  InkWell(
+                    onTap: () => _showReplyDialog(comment),
+                    child: const Text(
+                      'Trả lời',
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              /// 🔥 căn lại để avatar reply thẳng hàng đẹp
+              contentPadding: EdgeInsets.fromLTRB(
+                indent + 12,
+                2,
+                12,
+                2,
+              ),
+
+              minLeadingWidth: 32,
+              horizontalTitleGap: 8,
+              dense: true,
+              visualDensity: const VisualDensity(vertical: -2), // 🔥 giảm khoảng cách
+            ),
+          ],
         ),
-        // Replies
-        ...comment.replies.map((reply) => _buildCommentThread(reply, level: level + 1)),
+
+        /// 🔥 Replies
+        ...comment.replies
+            .map((reply) => _buildCommentThread(reply, level: level + 1)),
       ],
     );
   }
