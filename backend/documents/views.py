@@ -33,19 +33,37 @@ def documents_api(request):
     if request.method == "GET":
         qs = Document.objects.all()
         subject = request.query_params.get("subject", "").strip()
-        category = request.query_params.get("category", "").strip()
+
+        # ❌ bỏ category
+        # category = request.query_params.get("category", "").strip()
+
+        # ✅ thêm document_type
+        document_type = request.query_params.get("document_type", "").strip()
+
         q = request.query_params.get("q", "").strip()
+
         if subject:
             qs = qs.filter(subject__iexact=subject)
-        if category:
-            qs = qs.filter(category__iexact=category)
+
+        # ❌ bỏ filter category
+        # if category:
+        #     qs = qs.filter(category__iexact=category)
+
+        # ✅ filter theo document_type
+        if document_type:
+            qs = qs.filter(document_type__iexact=document_type)
+
         if q:
             qs = qs.filter(
                 Q(title__icontains=q)
                 | Q(description__icontains=q)
                 | Q(subject__icontains=q)
-                | Q(category__icontains=q)
+                # ❌ bỏ category search
+                # | Q(category__icontains=q)
+                # ✅ thêm document_type search
+                | Q(document_type__icontains=q)
             )
+
         serializer = DocumentSerializer(qs[:100], many=True, context={"request": request})
         return Response(serializer.data)
 
@@ -56,6 +74,7 @@ def documents_api(request):
     document_type = (request.data.get("document_type") or "other").strip().lower()
     description = (request.data.get("description") or "").strip()
     file_obj = request.FILES.get("file")
+
     if not title or not subject:
         return Response(
             {"detail": "title and subject are required"},
@@ -66,6 +85,7 @@ def documents_api(request):
             {"detail": "file is required (multipart upload)"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
     doc = Document.objects.create(
         uploader=actor,
         title=title,
@@ -75,6 +95,7 @@ def documents_api(request):
         description=description,
         file=file_obj,
     )
+
     return Response(
         DocumentSerializer(doc, context={"request": request}).data,
         status=status.HTTP_201_CREATED,
@@ -85,6 +106,7 @@ def documents_api(request):
 @permission_classes([permissions.AllowAny])
 def document_detail_api(request, pk):
     doc = get_object_or_404(Document, pk=pk)
+
     if request.method == "GET":
         return Response(DocumentSerializer(doc, context={"request": request}).data)
 
@@ -96,11 +118,15 @@ def document_detail_api(request, pk):
         doc.title = (request.data.get("title") or doc.title).strip()
         doc.subject = (request.data.get("subject") or doc.subject).strip()
         doc.category = (request.data.get("category") or doc.category).strip()
+
         doc_type = (request.data.get("document_type") or doc.document_type).strip().lower()
         doc.document_type = doc_type if doc_type in dict(Document.TYPE_CHOICES) else doc.document_type
+
         doc.description = (request.data.get("description") or doc.description).strip()
+
         if request.FILES.get("file"):
             doc.file = request.FILES["file"]
+
         doc.save()
         return Response(DocumentSerializer(doc, context={"request": request}).data)
 
@@ -117,10 +143,27 @@ def document_subjects_api(request):
         .distinct()
     )
     subjects = sorted(set(DEFAULT_SUBJECTS).union(set(db_subjects)))
+
     db_categories = (
         Document.objects.exclude(category__exact="")
         .values_list("category", flat=True)
         .distinct()
     )
     categories = sorted(set(DEFAULT_CATEGORIES).union(set(db_categories)))
-    return Response({"subjects": subjects, "categories": categories, "results": subjects})
+
+    return Response({
+        "subjects": subjects,
+        "categories": categories,
+        "results": subjects
+    })
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def document_view_api(request, pk):
+    doc = get_object_or_404(Document, pk=pk)
+
+    # 👉 +1 lượt xem
+    doc.download_count += 1
+    doc.save()
+
+    return Response({"download_count": doc.download_count})
