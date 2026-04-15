@@ -9,7 +9,6 @@ import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/community_screen.dart';
 import 'package:mobile_app/screens/friends_screen.dart';
 import 'package:mobile_app/screens/messages_screen.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -22,8 +21,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _loading = true;
   List<_NotifyItem> _items = [];
   Timer? _timer;
-  WebSocketChannel? _channel;
-  StreamSubscription? _wsSub;
 
   @override
   void initState() {
@@ -33,41 +30,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       const Duration(seconds: 2),
       (_) => _load(silent: true),
     );
-    _connectSocket();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _wsSub?.cancel();
-    _channel?.sink.close();
     super.dispose();
-  }
-
-  void _connectSocket() {
-    _channel = WebSocketChannel.connect(
-      Uri.parse('${AppApi.wsHost}/ws/notifications/${AppSession.username}/'),
-    );
-    _wsSub = _channel!.stream.listen(
-      (event) {
-        try {
-          final data = jsonDecode(event as String) as Map<String, dynamic>;
-          final type = (data['type'] ?? '').toString();
-          if (type == 'notification' ||
-              type == 'notification_read' ||
-              type == 'notification_deleted' ||
-              type == 'notification_read_all') {
-            _load(silent: true);
-          }
-        } catch (_) {}
-      },
-      onError: (_) {},
-      onDone: () {
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) _connectSocket();
-        });
-      },
-    );
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -76,7 +44,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       '${AppApi.notifications}/',
     ).replace(queryParameters: {'username': AppSession.username});
     try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http
+          .get(uri, headers: AppSession.authHeaders())
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       if (res.statusCode == 200) {
         final list = (jsonDecode(res.body) as List<dynamic>)
@@ -95,7 +65,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _readAll() async {
     await http.post(
       Uri.parse('${AppApi.notifications}/read-all/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username}),
     );
     _load(silent: true);
@@ -104,7 +76,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _markRead(_NotifyItem item) async {
     await http.post(
       Uri.parse('${AppApi.notifications}/${item.id}/read/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username}),
     );
     item.isRead = true;
@@ -115,6 +89,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       Uri.parse(
         '${AppApi.notifications}/${item.id}/delete/',
       ).replace(queryParameters: {'username': AppSession.username}),
+      headers: AppSession.authHeaders(),
     );
     if (!mounted) return;
     setState(() => _items.removeWhere((e) => e.id == item.id));

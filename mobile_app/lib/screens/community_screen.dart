@@ -8,12 +8,15 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/screens/create_post_screen.dart';
 import 'package:mobile_app/screens/documents_screen.dart';
 import 'package:mobile_app/screens/groups_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
-  const CommunityScreen({super.key});
+  const CommunityScreen({super.key, this.initialPostId});
+
+  final int? initialPostId;
 
   @override
   State<CommunityScreen> createState() => _CommunityScreenState();
@@ -26,6 +29,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
   final _searchController = TextEditingController();
   String _selectedTopic = 'all';
   List<_Post> _posts = [];
+  bool _openedInitialPost = false;
 
   @override
   void initState() {
@@ -51,7 +55,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
           'username': AppSession.username,
         },
       );
-      final res = await http.get(uri);
+      final res = await http.get(uri, headers: AppSession.authHeaders());
       if (res.statusCode != 200) throw Exception('status ${res.statusCode}');
 
       final list = (jsonDecode(res.body) as List<dynamic>)
@@ -63,6 +67,30 @@ class _CommunityScreenState extends State<CommunityScreen> {
         _posts = list;
         _loading = false;
       });
+
+      final initialId = widget.initialPostId;
+      if (!_openedInitialPost && initialId != null) {
+        final match = _posts.where((p) => p.id == initialId).cast<_Post?>().firstWhere(
+              (p) => p != null,
+              orElse: () => null,
+            );
+        if (match != null && mounted) {
+          _openedInitialPost = true;
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => _PostDetailScreen(
+                post: match,
+                username: AppSession.username,
+                apiBase: _apiBase,
+              ),
+            ),
+          );
+          if (mounted) {
+            _loadPosts();
+          }
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -92,7 +120,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
   Future<void> _toggleLike(_Post post) async {
     final res = await http.post(
       Uri.parse('$_apiBase/posts/${post.id}/react/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username}),
     );
     if (res.statusCode == 200) {
@@ -107,7 +137,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
   Future<void> _toggleSave(_Post post) async {
     final res = await http.post(
       Uri.parse('$_apiBase/posts/${post.id}/save/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username}),
     );
     if (res.statusCode == 200) {
@@ -115,6 +147,105 @@ class _CommunityScreenState extends State<CommunityScreen> {
       setState(() {
         post.isSaved = body['saved'] == true;
       });
+    }
+  }
+
+  Widget _buildPostMedia(_Post post) {
+    final hasImage = post.image != null && post.image!.isNotEmpty;
+    final hasFile = post.file != null && post.file!.isNotEmpty;
+    if (!hasImage && !hasFile) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasImage)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                children: [
+                  Image.network(
+                    post.image!,
+                    height: 210,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox(),
+                  ),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'Ảnh đính kèm',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (hasFile)
+            Padding(
+              padding: EdgeInsets.only(top: hasImage ? 10 : 0),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _openFileUrl(post.file!),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3F8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF6C7D9)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.insert_drive_file_outlined,
+                        color: Color(0xFFF33B6D),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          post.fileName ?? 'Tệp đính kèm',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.open_in_new_rounded,
+                        size: 18,
+                        color: Color(0xFFF33B6D),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openFileUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không thể mở tệp đính kèm.')),
+      );
     }
   }
 
@@ -159,8 +290,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
                       final post = _filteredPosts[index - 1];
 
                       return Card(
+                        elevation: 0,
+                        color: const Color(0xFFFFFBFD),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: const BorderSide(color: Color(0xFFF5D7E3)),
+                        ),
                         child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                           onTap: () async {
                             await Navigator.push(
                               context,
@@ -181,10 +318,26 @@ class _CommunityScreenState extends State<CommunityScreen> {
                               children: [
                                 Row(
                                   children: [
+                                    initialsAvatar(post.author, radius: 18),
+                                    const SizedBox(width: 10),
                                     Expanded(
-                                      child: Text(
-                                        post.author,
-                                        style: const TextStyle(fontWeight: FontWeight.w700),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            post.author,
+                                            style: const TextStyle(fontWeight: FontWeight.w700),
+                                          ),
+                                          if (post.topic.isNotEmpty)
+                                            Text(
+                                              '#${post.topic}',
+                                              style: const TextStyle(
+                                                color: Color(0xFFF33B6D),
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                     if (post.createdAt != null && post.createdAt!.isNotEmpty)
@@ -198,42 +351,13 @@ class _CommunityScreenState extends State<CommunityScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 6),
-                                Text(post.content, maxLines: 3, overflow: TextOverflow.ellipsis),
-
-                                // ── HIỂN THỊ ẢNH ──
-                                if (post.image != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 10),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        post.image!,
-                                        height: 180,
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, _, _) => const SizedBox(),
-                                      ),
-                                    ),
-                                  ),
-
-                                // ── HIỂN THỊ FILE ──
-                                if (post.file != null && post.fileName != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 10),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.attach_file, size: 20, color: Colors.blue),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            post.fileName!,
-                                            style: const TextStyle(fontSize: 13, color: Colors.blue),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                Text(
+                                  post.content,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(height: 1.35),
+                                ),
+                                _buildPostMedia(post),
 
                                 const SizedBox(height: 10),
                                 Row(
@@ -404,12 +528,12 @@ class _Post {
     // Xử lý link media (ảnh + file)
     String? imageUrl = json['image'];
     if (imageUrl != null && imageUrl.startsWith('/')) {
-      imageUrl = 'http://127.0.0.1:8000$imageUrl';
+      imageUrl = '${AppApi.host}$imageUrl';
     }
 
     String? fileUrl = json['file'];
     if (fileUrl != null && fileUrl.startsWith('/')) {
-      fileUrl = 'http://127.0.0.1:8000$fileUrl';
+      fileUrl = '${AppApi.host}$fileUrl';
     }
 
     final post = _Post(
@@ -420,7 +544,7 @@ class _Post {
       topic: (json['topic'] ?? '').toString(),
       image: imageUrl,
       file: fileUrl,
-      fileName: json['file_name'],
+      fileName: (json['file_name'] ?? _guessFileName(fileUrl))?.toString(),
       createdAt: json['created_at'],
       comments: (json['comments'] as List<dynamic>? ?? [])
           .map((e) => _Comment.fromJson(e as Map<String, dynamic>))
@@ -433,6 +557,13 @@ class _Post {
     
     return post;
   }
+}
+
+String? _guessFileName(String? fileUrl) {
+  if (fileUrl == null || fileUrl.isEmpty) return null;
+  final uri = Uri.tryParse(fileUrl);
+  if (uri == null || uri.pathSegments.isEmpty) return null;
+  return uri.pathSegments.last;
 }
 
 class _Comment {
@@ -514,7 +645,34 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.post.author, style: const TextStyle(fontWeight: FontWeight.w700)),
+                Row(
+                  children: [
+                    initialsAvatar(widget.post.author, radius: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.post.author,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    if (widget.post.topic.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFE8F1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '#${widget.post.topic}',
+                          style: const TextStyle(
+                            color: Color(0xFFF33B6D),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Text(widget.post.content),
 
@@ -614,7 +772,9 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                       if (text.isEmpty) return;
                       final res = await http.post(
                         Uri.parse('${widget.apiBase}/posts/${widget.post.id}/comments/'),
-                        headers: const {'Content-Type': 'application/json'},
+                        headers: AppSession.authHeaders(
+                          extra: const {'Content-Type': 'application/json'},
+                        ),
                         body: jsonEncode({
                           'username': widget.username,
                           'content': text,
@@ -691,7 +851,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.person, size: 18)),
+          leading: initialsAvatar(comment.author, radius: 16),
           title: Row(
             children: [
               Expanded(
@@ -783,7 +943,9 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
     if (text.isEmpty) return;
     final res = await http.post(
       Uri.parse('${widget.apiBase}/posts/${widget.post.id}/comments/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({
         'username': widget.username,
         'content': text,
@@ -903,6 +1065,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
         ..fields['title'] = title
         ..fields['content'] = content
         ..fields['topic'] = topic;
+      request.headers.addAll(AppSession.authHeaders());
 
       if (selectedImage != null) {
         final bytes = await selectedImage!.readAsBytes();
@@ -933,7 +1096,9 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
     } else {
       final res = await http.patch(
         Uri.parse('${widget.apiBase}/posts/${widget.post.id}/'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: AppSession.authHeaders(
+          extra: const {'Content-Type': 'application/json'},
+        ),
         body: jsonEncode({
           'username': widget.username,
           'title': title,

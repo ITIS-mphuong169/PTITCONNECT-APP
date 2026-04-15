@@ -28,7 +28,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
     final params = <String, String>{'username': AppSession.username};
     if (_query.trim().isNotEmpty) params['q'] = _query.trim();
     final uri = Uri.parse('${AppApi.groups}/').replace(queryParameters: params);
-    final res = await http.get(uri);
+    final res = await http.get(uri, headers: AppSession.authHeaders());
     if (res.statusCode == 200) {
       final list = (jsonDecode(res.body) as List<dynamic>)
           .map((e) => _Group.fromJson(e as Map<String, dynamic>))
@@ -152,7 +152,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
     if (ok != true) return;
     final res = await http.post(
       Uri.parse('${AppApi.groups}/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({
         'username': AppSession.username,
         'title': titleCtl.text.trim(),
@@ -168,7 +170,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
   Future<void> _joinGroup(_Group g) async {
     final res = await http.post(
       Uri.parse('${AppApi.groups}/${g.id}/join/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username}),
     );
     if (!mounted) return;
@@ -423,7 +427,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
     if (ok != true) return;
     final res = await http.patch(
       Uri.parse('${AppApi.groups}/${g.id}/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({
         'username': AppSession.username,
         'title': titleCtl.text.trim(),

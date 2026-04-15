@@ -99,7 +99,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
 
     try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http
+          .get(uri, headers: AppSession.authHeaders())
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
 
       if (res.statusCode == 200) {
@@ -135,7 +137,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
         if (q.trim().isNotEmpty) 'q': q.trim(),
       },
     );
-    final res = await http.get(uri).timeout(const Duration(seconds: 8));
+    final res = await http
+        .get(uri, headers: AppSession.authHeaders())
+        .timeout(const Duration(seconds: 8));
     if (res.statusCode != 200) return [];
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     return (body['results'] as List<dynamic>? ?? [])
@@ -146,7 +150,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Future<_Conversation?> _openConversation(String username) async {
     final res = await http.post(
       Uri.parse('${AppApi.chat}/open/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({
         'username': AppSession.username,
         'peer_username': username,
@@ -273,6 +279,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       Uri.parse(
         '${AppApi.chat}/${item.id}/delete/',
       ).replace(queryParameters: {'username': AppSession.username}),
+      headers: AppSession.authHeaders(),
     );
     if (!mounted) return;
     setState(() => _conversations.removeWhere((e) => e.id == item.id));
@@ -610,7 +617,9 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
         );
 
     try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http
+          .get(uri, headers: AppSession.authHeaders())
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       if (res.statusCode == 200) {
         final previousLastId = _lastMessageId;
@@ -720,7 +729,9 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
 
     final res = await http.post(
       Uri.parse('${AppApi.chat}/${widget.conversation.id}/messages/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username, 'content': text}),
     );
 
@@ -736,6 +747,7 @@ class _ChatDetailScreenState extends State<_ChatDetailScreen> {
       Uri.parse(
         '${AppApi.chat}/${widget.conversation.id}/delete/',
       ).replace(queryParameters: {'username': AppSession.username}),
+      headers: AppSession.authHeaders(),
     );
     if (!mounted) return;
     Navigator.pop(context, const _ChatActionResult(action: 'delete'));

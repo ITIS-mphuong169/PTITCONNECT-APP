@@ -27,7 +27,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final uri = Uri.parse(
       'http://127.0.0.1:8000/api/community/auto-feed/?limit=15',
     );
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: AppSession.authHeaders());
     if (response.statusCode != 200) {
       throw Exception('Khong tai duoc feed');
     }

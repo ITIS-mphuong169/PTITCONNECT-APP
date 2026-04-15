@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/screens/login_screen.dart';
 
 import 'package:mobile_app/core/app_api.dart';
 
@@ -73,7 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             : {'target_username': widget.targetUsername!},
       );
 
-      final res = await http.get(uri);
+      final res = await http.get(uri, headers: AppSession.authHeaders());
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -111,7 +112,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Uri.parse(
           '${AppApi.users}/profile/',
         ).replace(queryParameters: {'username': AppSession.username}),
-        headers: const {'Content-Type': 'application/json'},
+        headers: AppSession.authHeaders(
+          extra: const {'Content-Type': 'application/json'},
+        ),
         body: jsonEncode({
           'username': AppSession.username,
           'full_name': _fullName.text.trim(),
@@ -147,6 +150,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _logout() async {
+    await AppSession.clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   @override
@@ -193,6 +205,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ? _saveProfile
                     : () => setState(() => _isEditing = true),
                 child: Text(_isEditing ? 'Lưu' : 'Chỉnh sửa'),
+              ),
+            if (_isOwnProfile) const SizedBox(height: 8),
+            if (_isOwnProfile)
+              OutlinedButton(
+                onPressed: _logout,
+                child: const Text('Đăng xuất'),
               ),
           ],
         ),

@@ -39,6 +39,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   Future<void> _loadSubjects() async {
     final res = await http.get(
       Uri.parse('${AppApi.host}/api/documents/subjects/'),
+      headers: AppSession.authHeaders(),
     );
     if (res.statusCode == 200) {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -65,7 +66,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     final uri = Uri.parse(
       '${AppApi.host}/api/documents/',
     ).replace(queryParameters: params.isEmpty ? null : params);
-    final res = await http.get(uri);
+    final res = await http.get(uri, headers: AppSession.authHeaders());
     if (res.statusCode == 200) {
       final list = (jsonDecode(res.body) as List<dynamic>)
           .map((e) => _DocumentItem.fromJson(e as Map<String, dynamic>))
@@ -175,7 +176,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
                     onPressed: () async {
-                      final result = await FilePicker.platform.pickFiles(
+                      final result = await FilePicker.pickFiles(
                         withData: true,
                       );
                       if (result == null || result.files.isEmpty) return;
@@ -217,6 +218,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   'POST',
                   Uri.parse('${AppApi.host}/api/documents/'),
                 );
+                req.headers.addAll(AppSession.authHeaders());
                 req.fields['username'] = AppSession.username;
                 req.fields['title'] = titleCtl.text.trim();
                 req.fields['subject'] = subject;
@@ -550,6 +552,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       'PATCH',
       Uri.parse('${AppApi.documents}/${doc.id}/'),
     );
+    req.headers.addAll(AppSession.authHeaders());
     req.fields['username'] = AppSession.username;
     req.fields['title'] = titleCtl.text.trim();
     req.fields['subject'] = subject;

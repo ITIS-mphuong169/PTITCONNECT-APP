@@ -55,6 +55,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       final title = content.length > 60 ? '${content.substring(0, 60)}...' : content;
       var request = http.MultipartRequest('POST', Uri.parse('${AppApi.community}/posts/'));
+      request.headers.addAll(AppSession.authHeaders());
 
       // 1. Thêm các trường Text
       request.fields['username'] = AppSession.username;

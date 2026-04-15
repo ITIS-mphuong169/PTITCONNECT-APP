@@ -84,21 +84,25 @@ class _FriendsScreenState extends State<FriendsScreen>
           Uri.parse(
             '${AppApi.users}/friends/requests/inbox/',
           ).replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
         ),
         http.get(
           Uri.parse(
             '${AppApi.users}/friends/requests/sent/',
           ).replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
         ),
         http.get(
           Uri.parse(
             '${AppApi.users}/friends/',
           ).replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
         ),
         http.get(
           Uri.parse(
             '${AppApi.users}/friends/suggestions/',
           ).replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
         ),
       ]);
 
@@ -242,7 +246,9 @@ class _FriendsScreenState extends State<FriendsScreen>
   Future<void> _decide(_RequestItem item, String action) async {
     await http.post(
       Uri.parse('${AppApi.users}/friends/requests/${item.id}/decide/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({'username': AppSession.username, 'action': action}),
     );
     _load();
@@ -251,7 +257,9 @@ class _FriendsScreenState extends State<FriendsScreen>
   Future<void> _sendRequest(String username) async {
     await http.post(
       Uri.parse('${AppApi.users}/friends/requests/send/'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: AppSession.authHeaders(
+        extra: const {'Content-Type': 'application/json'},
+      ),
       body: jsonEncode({
         'username': AppSession.username,
         'to_username': username,
@@ -284,7 +292,9 @@ class _FriendsScreenState extends State<FriendsScreen>
           'q': q,
         },
       );
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http
+          .get(uri, headers: AppSession.authHeaders())
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
 
       if (res.statusCode == 200) {

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/screens/home_shell_screen.dart';
 import 'package:mobile_app/screens/login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -16,7 +18,14 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, LoginScreen.routeName);
+      if (AppSession.isLoggedIn) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeShellScreen()),
+        );
+      } else {
+        Navigator.pushReplacementNamed(context, LoginScreen.routeName);
+      }
     });
   }
 

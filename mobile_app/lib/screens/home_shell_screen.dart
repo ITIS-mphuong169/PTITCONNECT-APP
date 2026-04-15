@@ -10,7 +10,6 @@ import 'package:mobile_app/screens/feed_screen.dart';
 import 'package:mobile_app/screens/friends_screen.dart';
 import 'package:mobile_app/screens/messages_screen.dart';
 import 'package:mobile_app/screens/notifications_screen.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 class HomeShellScreen extends StatefulWidget {
   const HomeShellScreen({super.key});
@@ -25,8 +24,6 @@ class _HomeShellScreenState extends State<HomeShellScreen> {
   int _notificationBadge = 0;
   int _friendBadge = 0;
   Timer? _timer;
-  WebSocketChannel? _channel;
-  StreamSubscription? _wsSub;
 
   late final List<Widget> _tabs = const [
     FeedScreen(),
@@ -41,21 +38,11 @@ class _HomeShellScreenState extends State<HomeShellScreen> {
     super.initState();
     _loadBadges();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) => _loadBadges());
-    _channel = WebSocketChannel.connect(
-      Uri.parse('${AppApi.wsHost}/ws/notifications/${AppSession.username}/'),
-    );
-    _wsSub = _channel!.stream.listen(
-      (_) => _loadBadges(),
-      onError: (_) {},
-      onDone: () {},
-    );
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _wsSub?.cancel();
-    _channel?.sink.close();
     super.dispose();
   }
 
@@ -63,16 +50,21 @@ class _HomeShellScreenState extends State<HomeShellScreen> {
     final params = {'username': AppSession.username};
     try {
       final results = await Future.wait([
-        http.get(Uri.parse('${AppApi.chat}/').replace(queryParameters: params)),
+        http.get(
+          Uri.parse('${AppApi.chat}/').replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
+        ),
         http.get(
           Uri.parse(
             '${AppApi.notifications}/',
           ).replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
         ),
         http.get(
           Uri.parse(
             '${AppApi.users}/friends/requests/inbox/',
           ).replace(queryParameters: params),
+          headers: AppSession.authHeaders(),
         ),
       ]).timeout(const Duration(seconds: 8));
       final convs = (jsonDecode(results[0].body) as List<dynamic>?) ?? [];

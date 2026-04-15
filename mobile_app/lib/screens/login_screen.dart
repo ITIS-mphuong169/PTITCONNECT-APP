@@ -1,9 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/admin_dashboard_screen.dart';
 import 'package:mobile_app/screens/home_shell_screen.dart';
-import 'package:mobile_app/screens/microsoft_login_webview_screen.dart';
-
 class LoginScreen extends StatefulWidget {
   static const routeName = '/login';
 
@@ -14,12 +16,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const bool _useMockLogin = true;
-
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -30,15 +31,58 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _onLoginPressed() async {
     if (!_formKey.currentState!.validate()) return;
-    
+    if (_isSubmitting) return;
+
     final email = _emailController.text.trim().toLowerCase();
     final derivedUsername = email.split('@').first;
-    
-    // Lưu username vào session như cũ
-    AppSession.username = derivedUsername;
+    final password = _passwordController.text;
+    setState(() => _isSubmitting = true);
 
-    // Giả lập quá trình đăng nhập (Mock Login)
-    await Future<void>.delayed(const Duration(milliseconds: 450));
+    try {
+      final res = await http.post(
+        Uri.parse('${AppApi.users}/login/'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': derivedUsername,
+          'password': password,
+        }),
+      );
+
+      if (res.statusCode != 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đăng nhập thất bại. Kiểm tra lại email hoặc mật khẩu.'),
+          ),
+        );
+        return;
+      }
+
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final access = (body['access'] ?? '').toString();
+      final refresh = (body['refresh'] ?? '').toString();
+      if (access.isEmpty || refresh.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không nhận được token đăng nhập.')),
+        );
+        return;
+      }
+
+      await AppSession.saveLogin(
+        usernameValue: derivedUsername,
+        accessTokenValue: access,
+        refreshTokenValue: refresh,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không thể kết nối backend.')),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
 
     if (!mounted) return;
 
@@ -82,23 +126,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 28),
-                    if (_useMockLogin)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 14),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3CD),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFFE69C)),
-                        ),
-                        child: const Text(
-                          'Mock login mode đang bật để dev nhanh.',
-                          style: TextStyle(fontSize: 13),
-                        ),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF5FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFB9DFFF)),
+                      ),
+                      child: const Text(
+                        'Đăng nhập thật với tài khoản backend. Username dùng phần trước dấu @ trong email.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -137,7 +180,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       validator: (value) {
-                        if (_useMockLogin) return null;
                         if ((value ?? '').isEmpty) {
                           return 'Vui lòng nhập mật khẩu';
                         }
@@ -159,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _onLoginPressed,
+                        onPressed: _isSubmitting ? null : _onLoginPressed,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFF33B6D),
                           foregroundColor: Colors.white,
@@ -168,13 +210,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text(
-                          'Đăng nhập với P-connect',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text(
+                                'Đăng nhập với P-connect',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                       ),
                     ),
                     const SizedBox(height: 24),
