@@ -9,7 +9,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from users.models import Profile, FriendRequest
-from chat_app.models import Conversation, Message
+from chat_app.models import Conversation, ConversationParticipant, Message
 from notifications_app.models import Notification
 
 from community.models import Comment, Post, PostLike, SavedPost
@@ -92,6 +92,7 @@ class Command(BaseCommand):
                 f"Profiles={Profile.objects.count()}, "
                 f"FriendRequests={FriendRequest.objects.count()}, "
                 f"Conversations={Conversation.objects.count()}, "
+                f"ConversationParticipants={ConversationParticipant.objects.count()}, "
                 f"Messages={Message.objects.count()}, "
                 f"Notifications={Notification.objects.count()}, "
                 f"Posts={Post.objects.count()}, "
@@ -103,8 +104,11 @@ class Command(BaseCommand):
 
     def reset_all(self):
         Notification.objects.all().delete()
+
         Message.objects.all().delete()
+        ConversationParticipant.objects.all().delete()
         Conversation.objects.all().delete()
+
         FriendRequest.objects.all().delete()
 
         Comment.objects.all().delete()
@@ -255,13 +259,13 @@ class Command(BaseCommand):
 
     def create_chat(self, users, friend_map):
         """
-        15 chat partners / user.
-        20-30 messages / conversation.
+        Tạo cả direct chat và group chat theo model mới:
+        - Direct chat: 2 participants
+        - Group chat: >= 3 participants
         """
         conv_map = defaultdict(list)
-        offsets = list(range(1, 8)) + [len(users) // 2]
 
-        samples = [
+        direct_samples = [
             "Chào bạn, hôm nay học nhóm không?",
             "Mình vừa up tài liệu mới, bạn xem nhé.",
             "Mai kiểm tra rồi, ôn phần database chưa?",
@@ -279,6 +283,22 @@ class Command(BaseCommand):
             "Mình vừa sửa xong backend rồi.",
         ]
 
+        group_samples = [
+            "Mọi người ơi tối nay họp nhóm nhé.",
+            "Ai làm phần backend rồi cập nhật giúp mình.",
+            "Nhóm mình chia task chưa nhỉ?",
+            "Bạn nào rảnh review UI giúp mình với.",
+            "Deadline bài tập là thứ 6 đó nha.",
+            "Mình vừa push code mới lên repo rồi.",
+            "Check tin nhắn và phản hồi giúp mình nhé.",
+            "Tài liệu mình gửi ở trên, mọi người xem thử.",
+            "Mai lên thư viện học nhóm không mọi người?",
+            "Ai phụ trách slide thuyết trình vậy?",
+        ]
+
+        # ===== DIRECT CHAT =====
+        offsets = list(range(1, 8)) + [len(users) // 2]
+
         for i in range(len(users)):
             for off in offsets:
                 j = (i + off) % len(users)
@@ -290,22 +310,99 @@ class Command(BaseCommand):
                     continue
 
                 conv = Conversation.objects.create(
-                    user1=u1,
-                    user2=u2,
-                    updated_at=timezone.now(),
+                    title="",
+                    is_group=False,
+                    created_by=u1,
                 )
 
-                for _ in range(random.randint(20, 30)):
+                ConversationParticipant.objects.create(
+                    conversation=conv,
+                    user=u1,
+                    is_admin=True,
+                )
+                ConversationParticipant.objects.create(
+                    conversation=conv,
+                    user=u2,
+                    is_admin=False,
+                )
+
+                total_messages = random.randint(20, 30)
+                for _ in range(total_messages):
                     msg = Message.objects.create(
                         conversation=conv,
                         sender=random.choice([u1, u2]),
-                        content=random.choice(samples),
+                        content=random.choice(direct_samples),
+                        is_read=random.choice([True, False]),
                     )
                     conv.updated_at = getattr(msg, "created_at", timezone.now())
 
                 conv.save()
+
                 conv_map[u1.id].append(conv)
                 conv_map[u2.id].append(conv)
+
+        # ===== GROUP CHAT =====
+        group_titles = [
+            "Nhóm đồ án Flutter 01",
+            "Nhóm PTUD Mobile",
+            "Nhóm ôn tập CSDL",
+            "Team backend Django",
+            "Nhóm báo cáo AI",
+            "Nhóm học CNPM",
+            "Nhóm chia sẻ tài liệu DSA",
+            "Team app chat PTIT",
+            "Nhóm học Database",
+            "Nhóm học tối PTIT",
+        ]
+
+        created_groups = 0
+        max_groups = 18
+
+        for owner in users[:]:
+            if created_groups >= max_groups:
+                break
+
+            friend_ids = list(friend_map[owner.id])
+            if len(friend_ids) < 2:
+                continue
+
+            member_count = random.randint(3, 6)
+            chosen_friend_ids = random.sample(
+                friend_ids,
+                k=min(member_count - 1, len(friend_ids)),
+            )
+            member_users = [owner] + [User.objects.get(id=fid) for fid in chosen_friend_ids]
+
+            conv = Conversation.objects.create(
+                title=random.choice(group_titles),
+                is_group=True,
+                created_by=owner,
+            )
+
+            for idx, member in enumerate(member_users):
+                ConversationParticipant.objects.create(
+                    conversation=conv,
+                    user=member,
+                    is_admin=(idx == 0),
+                )
+
+            total_messages = random.randint(25, 45)
+            for _ in range(total_messages):
+                sender = random.choice(member_users)
+                msg = Message.objects.create(
+                    conversation=conv,
+                    sender=sender,
+                    content=random.choice(group_samples),
+                    is_read=random.choice([True, False]),
+                )
+                conv.updated_at = getattr(msg, "created_at", timezone.now())
+
+            conv.save()
+
+            for member in member_users:
+                conv_map[member.id].append(conv)
+
+            created_groups += 1
 
         return conv_map
 
@@ -337,14 +434,29 @@ class Command(BaseCommand):
                 )
                 count += 1
 
-            for conv in conv_map[u.id][:5]:
-                other = conv.user2 if conv.user1_id == u.id else conv.user1
+            for conv in conv_map[u.id][:8]:
+                participants = list(
+                    conv.participants.select_related("user").exclude(user=u)
+                )
+
+                if conv.is_group:
+                    title = "Tin nhắn nhóm mới"
+                    content = f"Có hoạt động mới trong nhóm '{conv.title or 'Nhóm chat'}'."
+                    target_username = participants[0].user.username if participants else ""
+                else:
+                    other = participants[0].user if participants else None
+                    if other is None:
+                        continue
+                    title = "Tin nhắn mới"
+                    content = f"{other.username} đã gửi tin nhắn cho bạn."
+                    target_username = other.username
+
                 Notification.objects.create(
                     user=u,
-                    title="Tin nhắn mới",
-                    content=f"{other.username} đã gửi tin nhắn cho bạn.",
+                    title=title,
+                    content=content,
                     notification_type="message",
-                    target_username=other.username,
+                    target_username=target_username,
                     conversation_id=conv.id,
                     is_read=False,
                 )

@@ -7,6 +7,8 @@ import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/admin_dashboard_screen.dart';
 import 'package:mobile_app/screens/home_shell_screen.dart';
 import 'package:mobile_app/screens/microsoft_login_webview_screen.dart';
+import 'package:mobile_app/services/notification_socket_service.dart';
+
 class LoginScreen extends StatefulWidget {
   static const routeName = '/login';
 
@@ -28,9 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MicrosoftLoginWebViewScreen(
-          emailHint: emailHint,
-        ),
+        builder: (_) => MicrosoftLoginWebViewScreen(emailHint: emailHint),
       ),
     );
     if (!mounted) return;
@@ -63,17 +63,16 @@ class _LoginScreenState extends State<LoginScreen> {
       final res = await http.post(
         Uri.parse('${AppApi.users}/login/'),
         headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': derivedUsername,
-          'password': password,
-        }),
+        body: jsonEncode({'username': derivedUsername, 'password': password}),
       );
 
       if (res.statusCode != 200) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Đăng nhập thất bại. Kiểm tra lại email hoặc mật khẩu.'),
+            content: Text(
+              'Đăng nhập thất bại. Kiểm tra lại email hoặc mật khẩu.',
+            ),
           ),
         );
         return;
@@ -95,6 +94,8 @@ class _LoginScreenState extends State<LoginScreen> {
         accessTokenValue: access,
         refreshTokenValue: refresh,
       );
+      await AppSession.init();
+      NotificationSocketService.instance.connect();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,7 +110,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // LOGIC PHÂN LUỒNG:
     // Nếu email là admin@stu.ptit.edu.vn hoặc có chứa từ 'admin' ở tiền tố
-    if (email == 'admin@stu.ptit.edu.vn' || derivedUsername.startsWith('admin')) {
+    if (email == 'admin@stu.ptit.edu.vn' ||
+        derivedUsername.startsWith('admin')) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
@@ -221,7 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 height: 22,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
                                 ),
                               )
                             : const Text(
