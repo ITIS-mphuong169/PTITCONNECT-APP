@@ -19,6 +19,7 @@ class DocumentModel {
   final String fileType;
   final int likes;
   final int views;
+  final bool isLiked;
   final String coverColor;
   final String year;
 
@@ -30,6 +31,7 @@ class DocumentModel {
     required this.fileType,
     required this.likes,
     required this.views,
+    this.isLiked = false,
     required this.coverColor,
     required this.year,
   });
@@ -45,6 +47,9 @@ class _DocumentItem {
     required this.description,
     required this.uploaderName,
     required this.downloadCount,
+    required this.viewCount,
+    required this.likeCount,
+    required this.isLiked,
     this.fileUrl,
   });
 
@@ -56,6 +61,9 @@ class _DocumentItem {
   final String description;
   final String uploaderName;
   final int downloadCount;
+  final int viewCount;
+  final int likeCount;
+  final bool isLiked;
   final String? fileUrl;
 
   factory _DocumentItem.fromJson(Map<String, dynamic> json) {
@@ -68,7 +76,31 @@ class _DocumentItem {
       description: (json['description'] ?? '').toString(),
       uploaderName: (json['uploader_name'] ?? '').toString(),
       downloadCount: (json['download_count'] as num?)?.toInt() ?? 0,
+      viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
+      likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
+      isLiked: json['is_liked'] == true,
       fileUrl: json['file_url']?.toString(),
+    );
+  }
+
+  _DocumentItem copyWith({
+    int? viewCount,
+    int? likeCount,
+    bool? isLiked,
+  }) {
+    return _DocumentItem(
+      id: id,
+      title: title,
+      subject: subject,
+      category: category,
+      documentType: documentType,
+      description: description,
+      uploaderName: uploaderName,
+      downloadCount: downloadCount,
+      viewCount: viewCount ?? this.viewCount,
+      likeCount: likeCount ?? this.likeCount,
+      isLiked: isLiked ?? this.isLiked,
+      fileUrl: fileUrl,
     );
   }
 }
@@ -174,20 +206,70 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
   List<DocumentModel> get _filteredDocs {
     return _docs
         .where((d) => d.title.toLowerCase().contains(_searchQuery.toLowerCase()) || d.subject.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .map(
-          (d) => DocumentModel(
-            id: d.id.toString(),
-            title: d.title,
-            subject: d.subject,
-            author: d.uploaderName,
-            fileType: d.documentType.toUpperCase(),
-            likes: 0,
-            views: d.downloadCount,
-            coverColor: '#E91E63',
-            year: '',
-          ),
-        )
+        .map(_documentModelFromItem)
         .toList();
+  }
+
+  DocumentModel _documentModelFromItem(_DocumentItem d) {
+    return DocumentModel(
+      id: d.id.toString(),
+      title: d.title,
+      subject: d.subject,
+      author: d.uploaderName,
+      fileType: d.documentType.toUpperCase(),
+      likes: d.likeCount,
+      views: d.viewCount,
+      isLiked: d.isLiked,
+      coverColor: '#E91E63',
+      year: '',
+    );
+  }
+
+  DocumentModel _freshDoc(DocumentModel doc) {
+    final item = _findDocItem(doc);
+    return item != null ? _documentModelFromItem(item) : doc;
+  }
+
+  void _patchDocInList(int docId, _DocumentItem Function(_DocumentItem) update) {
+    setState(() {
+      _docs = _docs
+          .map((e) => e.id == docId ? update(e) : e)
+          .toList();
+    });
+  }
+
+  Future<void> _toggleDocumentLike(int docId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppApi.host}/api/documents/$docId/like/'),
+        headers: AppSession.authHeaders(
+          extra: const {'Content-Type': 'application/json'},
+        ),
+        body: jsonEncode(const {}),
+      );
+      if (res.statusCode != 200 || !mounted) return;
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final likeCount = (body['like_count'] as num?)?.toInt() ?? 0;
+      final liked = body['liked'] == true;
+      _patchDocInList(docId, (e) => e.copyWith(likeCount: likeCount, isLiked: liked));
+    } catch (_) {}
+  }
+
+  Future<void> _recordDocumentView(int docId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppApi.host}/api/documents/$docId/view/'),
+        headers: AppSession.authHeaders(
+          extra: const {'Content-Type': 'application/json'},
+        ),
+        body: jsonEncode(const {}),
+      );
+      if (res.statusCode != 200 || !mounted) return;
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final viewCount = (body['view_count'] as num?)?.toInt();
+      if (viewCount == null) return;
+      _patchDocInList(docId, (e) => e.copyWith(viewCount: viewCount));
+    } catch (_) {}
   }
 
   Future<void> _loadAll() async {
@@ -250,6 +332,7 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
     final hit = _docs.where((d) => d.id.toString() == doc.id).cast<_DocumentItem?>().firstWhere((e) => e != null, orElse: () => null);
     final url = hit?.fileUrl;
     if (url == null || url.isEmpty) return;
+    await _recordDocumentView(int.parse(doc.id));
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
@@ -796,7 +879,15 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        _statChip(Icons.favorite_border_rounded, '${doc.likes}', const Color(0xFFE8294E)),
+                        GestureDetector(
+                          onTap: () => _toggleDocumentLike(int.parse(doc.id)),
+                          behavior: HitTestBehavior.opaque,
+                          child: _statChip(
+                            doc.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            '${doc.likes}',
+                            const Color(0xFFE8294E),
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         _statChip(Icons.visibility_outlined, '${doc.views}', AppColors.textSecondary),
                       ],
@@ -963,15 +1054,21 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
   }
 
   void _showDocumentDetail(BuildContext context, DocumentModel doc) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _recordDocumentView(int.parse(doc.id));
+    });
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.88,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (_, controller) => Container(
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setModal) {
+          final d = _freshDoc(doc);
+          return DraggableScrollableSheet(
+            initialChildSize: 0.88,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            builder: (_, controller) => Container(
           decoration: const BoxDecoration(
             color: _cardBg,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -989,11 +1086,11 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Text(doc.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E), height: 1.3)),
+                          child: Text(d.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E), height: 1.3)),
                         ),
                         const SizedBox(width: 8),
                         IconButton(
-                          onPressed: () => Navigator.pop(ctx),
+                          onPressed: () => Navigator.pop(sheetCtx),
                           icon: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
@@ -1005,9 +1102,20 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        _statChip(Icons.favorite_border_rounded, '${doc.likes} lượt thích', const Color(0xFFE8294E)),
+                        GestureDetector(
+                          onTap: () async {
+                            await _toggleDocumentLike(int.parse(doc.id));
+                            if (sheetCtx.mounted) setModal(() {});
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: _statChip(
+                            d.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            '${d.likes} lượt thích',
+                            const Color(0xFFE8294E),
+                          ),
+                        ),
                         const SizedBox(width: 8),
-                        _statChip(Icons.visibility_outlined, '${doc.views} lượt xem', AppColors.textSecondary),
+                        _statChip(Icons.visibility_outlined, '${d.views} lượt xem', AppColors.textSecondary),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -1016,16 +1124,16 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            _hexToColor(doc.coverColor).withOpacity(0.2),
-                            _hexToColor(doc.coverColor).withOpacity(0.05),
+                            _hexToColor(d.coverColor).withOpacity(0.2),
+                            _hexToColor(d.coverColor).withOpacity(0.05),
                           ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _hexToColor(doc.coverColor).withOpacity(0.2)),
+                        border: Border.all(color: _hexToColor(d.coverColor).withOpacity(0.2)),
                       ),
-                      child: _buildDocumentPreview(doc),
+                      child: _buildDocumentPreview(d),
                     ),
                     const SizedBox(height: 20),
                     Container(
@@ -1038,16 +1146,16 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                         children: [
                           CircleAvatar(
                             radius: 20,
-                            backgroundColor: _hexToColor(doc.coverColor).withOpacity(0.2),
-                            child: Text(doc.author[0], style: TextStyle(fontWeight: FontWeight.w700, color: _hexToColor(doc.coverColor))),
+                            backgroundColor: _hexToColor(d.coverColor).withOpacity(0.2),
+                            child: Text(d.author.isEmpty ? '?' : d.author[0], style: TextStyle(fontWeight: FontWeight.w700, color: _hexToColor(d.coverColor))),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(doc.author, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1A1A2E))),
-                                Text('Tác giả · ${doc.year}', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                                Text(d.author, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1A1A2E))),
+                                Text('Tác giả · ${d.year}', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
                               ],
                             ),
                           ),
@@ -1068,7 +1176,7 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () {
-                              Navigator.pop(ctx);
+                              Navigator.pop(sheetCtx);
                               _showEditModal(context, doc);
                             },
                             icon: const Icon(Icons.edit_outlined, size: 18),
@@ -1078,7 +1186,7 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
                         const SizedBox(width: 10),
                         Expanded(
                           child: GestureDetector(
-                            onTap: () => _openDoc(doc),
+                            onTap: () => _openDoc(d),
                             child: Container(
                               height: 50,
                               decoration: BoxDecoration(
@@ -1127,6 +1235,8 @@ class _DocumentScreenState extends State<DocumentScreen> with SingleTickerProvid
             ],
           ),
         ),
+        );
+        },
       ),
     );
   }

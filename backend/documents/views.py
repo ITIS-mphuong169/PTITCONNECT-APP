@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import F, Q
 from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import get_object_or_404
@@ -6,7 +6,7 @@ from rest_framework.response import Response
 
 from core.demo_auth import resolve_demo_user
 
-from .models import Document
+from .models import Document, DocumentLike
 from .serializers import DocumentSerializer
 
 DEFAULT_SUBJECTS = [
@@ -46,7 +46,12 @@ def documents_api(request):
                 | Q(subject__icontains=q)
                 | Q(category__icontains=q)
             )
-        serializer = DocumentSerializer(qs[:100], many=True, context={"request": request})
+        actor = resolve_demo_user(request)
+        serializer = DocumentSerializer(
+            qs[:100],
+            many=True,
+            context={"request": request, "user": actor},
+        )
         return Response(serializer.data)
 
     actor = resolve_demo_user(request)
@@ -76,7 +81,9 @@ def documents_api(request):
         file=file_obj,
     )
     return Response(
-        DocumentSerializer(doc, context={"request": request}).data,
+        DocumentSerializer(
+            doc, context={"request": request, "user": actor}
+        ).data,
         status=status.HTTP_201_CREATED,
     )
 
@@ -86,7 +93,12 @@ def documents_api(request):
 def document_detail_api(request, pk):
     doc = get_object_or_404(Document, pk=pk)
     if request.method == "GET":
-        return Response(DocumentSerializer(doc, context={"request": request}).data)
+        actor = resolve_demo_user(request)
+        return Response(
+            DocumentSerializer(
+                doc, context={"request": request, "user": actor}
+            ).data
+        )
 
     actor = resolve_demo_user(request)
     if doc.uploader_id != actor.id:
@@ -102,7 +114,11 @@ def document_detail_api(request, pk):
         if request.FILES.get("file"):
             doc.file = request.FILES["file"]
         doc.save()
-        return Response(DocumentSerializer(doc, context={"request": request}).data)
+        return Response(
+            DocumentSerializer(
+                doc, context={"request": request, "user": actor}
+            ).data
+        )
 
     doc.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -124,3 +140,28 @@ def document_subjects_api(request):
     )
     categories = sorted(set(DEFAULT_CATEGORIES).union(set(db_categories)))
     return Response({"subjects": subjects, "categories": categories, "results": subjects})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def document_like_api(request, pk):
+    doc = get_object_or_404(Document, pk=pk)
+    actor = resolve_demo_user(request)
+    like = DocumentLike.objects.filter(document=doc, user=actor).first()
+    if like is None:
+        DocumentLike.objects.create(document=doc, user=actor)
+        liked = True
+    else:
+        like.delete()
+        liked = False
+    like_count = DocumentLike.objects.filter(document=doc).count()
+    return Response({"liked": liked, "like_count": like_count})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def document_record_view_api(request, pk):
+    doc = get_object_or_404(Document, pk=pk)
+    Document.objects.filter(pk=doc.pk).update(view_count=F("view_count") + 1)
+    doc.refresh_from_db()
+    return Response({"view_count": doc.view_count})

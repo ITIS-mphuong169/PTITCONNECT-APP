@@ -60,3 +60,44 @@ class SavedPost(models.Model):
 
     def __str__(self):
         return f"{self.user.username} saved {self.post_id}"
+
+
+class ModerationLog(models.Model):
+    TARGET_CHOICES = (
+        ("USER", "Người dùng"),
+        ("POST", "Bài viết"),
+    )
+    STATUS_CHOICES = (
+        ("PENDING", "Đang chờ xử lý"),
+        ("BANNED", "Đã khóa/Xóa"),
+        ("IGNORED", "Bỏ qua"),
+    )
+
+    target_type = models.CharField(max_length=10, choices=TARGET_CHOICES)
+    target_user = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="moderation_logs",
+    )
+    target_post = models.ForeignKey(
+        "Post",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="moderation_logs",
+    )
+
+    violation_type = models.CharField(max_length=100)
+    reason = models.TextField()
+    violating_content = models.TextField(blank=True, null=True)
+
+    risk_score = models.IntegerField(default=0)
+    is_auto_flagged = models.BooleanField(default=False)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"[{self.risk_score} điểm] {self.target_type} - {self.violation_type}"
