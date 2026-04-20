@@ -6,6 +6,7 @@ from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from core.demo_auth import resolve_demo_user
+from core.permissions import IsAuthenticatedOrDemoUser
 from notifications_app.services import create_notification
 
 from .models import FriendRequest, Profile
@@ -28,7 +29,7 @@ def _pending_user_ids(user):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def friend_requests_inbox_api(request):
     me = resolve_demo_user(request)
     pending = FriendRequest.objects.filter(to_user=me, status="pending").order_by("-created_at")
@@ -36,7 +37,7 @@ def friend_requests_inbox_api(request):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def friend_requests_sent_api(request):
     me = resolve_demo_user(request)
     pending = FriendRequest.objects.filter(from_user=me, status="pending").order_by("-created_at")
@@ -44,7 +45,7 @@ def friend_requests_sent_api(request):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def friends_list_api(request):
     me = resolve_demo_user(request)
     profiles = []
@@ -55,7 +56,7 @@ def friends_list_api(request):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def users_search_api(request):
     me = resolve_demo_user(request)
     q = (request.query_params.get("q") or "").strip()
@@ -75,7 +76,7 @@ def users_search_api(request):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def friend_suggestions_api(request):
     me = resolve_demo_user(request)
     friend_ids = {u.id for u in _accepted_friend_users(me)}
@@ -89,7 +90,7 @@ def friend_suggestions_api(request):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def friend_request_send_api(request):
     me = resolve_demo_user(request)
     target_username = (request.data.get("to_username") or "").strip().lower()
@@ -135,7 +136,7 @@ def friend_request_send_api(request):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticatedOrDemoUser])
 def friend_request_decide_api(request, pk):
     me = resolve_demo_user(request)
     fr = get_object_or_404(FriendRequest, pk=pk, to_user=me)

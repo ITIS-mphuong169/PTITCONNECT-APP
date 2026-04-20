@@ -71,29 +71,18 @@ class IncomingCallScreen extends StatelessWidget {
                 FloatingActionButton(
                   backgroundColor: Colors.green,
                   onPressed: () async {
+                    final title = data.callerName.isEmpty
+                        ? data.callerUsername
+                        : data.callerName;
                     await _updateStatus('answered');
-                    CallState.instance.startActive(
-                      ActiveCallData(
-                        conversationId: data.conversationId,
-                        callLogId: data.callLogId,
-                        callType: data.callType,
-                        isCaller: false,
-                        title: data.callerName.isEmpty
-                            ? data.callerUsername
-                            : data.callerName,
-                      ),
-                    );
-
                     if (context.mounted) {
-                      Navigator.of(context).push(
+                      Navigator.of(context, rootNavigator: true).push(
                         MaterialPageRoute(
                           builder: (_) => VideoCallScreen(
                             conversationId: data.conversationId,
                             callLogId: data.callLogId,
                             callType: data.callType,
-                            title: data.callerName.isEmpty
-                                ? data.callerUsername
-                                : data.callerName,
+                            title: title,
                             isCaller: false,
                           ),
                         ),

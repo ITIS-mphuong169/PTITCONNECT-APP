@@ -15,6 +15,9 @@ class AppSession {
     if (accessToken.isNotEmpty) {
       headers['Authorization'] = 'Bearer $accessToken';
     }
+    if (username.isNotEmpty && username != 'demo_user') {
+      headers['X-Demo-User'] = username;
+    }
     if (extra != null) headers.addAll(extra);
     return headers;
   }

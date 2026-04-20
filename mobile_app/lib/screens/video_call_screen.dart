@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
@@ -34,12 +36,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
-  late CallSignalingService _signaling;
+  CallSignalingService? _signaling;
 
   bool _micEnabled = true;
   bool _cameraEnabled = true;
   bool _connected = false;
   bool _offerSent = false;
+  bool _ending = false;
   Timer? _ringTimer;
 
   @override
@@ -64,7 +67,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _remoteRenderer.dispose();
     _localStream?.dispose();
     _peerConnection?.close();
-    _signaling.dispose();
+    _signaling?.dispose();
     super.dispose();
   }
 
@@ -80,61 +83,90 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     );
   }
 
-  Future<void> _init() async {
-    await _localRenderer.initialize();
-    await _remoteRenderer.initialize();
-
-    _signaling = CallSignalingService(widget.conversationId);
-    _signaling.connect(_handleSignal);
-
-    debugPrint('call init: ${widget.callType}, isCaller=${widget.isCaller}');
-
-    final mediaConstraints = {
-      'audio': true,
-      'video': widget.callType == 'video',
-    };
-
-    _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    _localRenderer.srcObject = _localStream;
-    debugPrint('local stream ready: ${_localStream?.getTracks().length}');
-
-    final configuration = {
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-      ],
-    };
-
-    _peerConnection = await createPeerConnection(configuration);
-
-    for (final track in _localStream!.getTracks()) {
-      await _peerConnection!.addTrack(track, _localStream!);
+  void _markConnected() {
+    _ringTimer?.cancel();
+    if (mounted && !_connected) {
+      setState(() => _connected = true);
     }
+  }
 
-    _peerConnection!.onTrack = (RTCTrackEvent event) {
-      debugPrint('onTrack fired, streams=${event.streams.length}');
-      if (event.streams.isNotEmpty) {
-        _remoteRenderer.srcObject = event.streams.first;
-        if (mounted) setState(() => _connected = true);
+  Future<void> _closeCallScreen() async {
+    if (_ending) return;
+    _ending = true;
+    _ringTimer?.cancel();
+    CallState.instance.endActive();
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _init() async {
+    try {
+      await _localRenderer.initialize();
+      await _remoteRenderer.initialize();
+
+      _signaling = CallSignalingService(widget.conversationId);
+      _signaling!.connect(_handleSignal);
+
+      debugPrint('call init: ${widget.callType}, isCaller=${widget.isCaller}');
+
+      final mediaConstraints = {
+        'audio': true,
+        'video': widget.callType == 'video',
+      };
+
+      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      _localRenderer.srcObject = _localStream;
+      await Helper.setSpeakerphoneOn(true);
+      debugPrint('local stream ready: ${_localStream?.getTracks().length}');
+
+      final configuration = {
+        'iceServers': [
+          {'urls': 'stun:stun.l.google.com:19302'},
+        ],
+      };
+
+      _peerConnection = await createPeerConnection(configuration);
+
+      for (final track in _localStream!.getTracks()) {
+        await _peerConnection!.addTrack(track, _localStream!);
       }
-    };
 
-    _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-      debugPrint('send candidate');
-      _signaling.send({'type': 'candidate', 'candidate': candidate.toMap()});
-    };
-
-    if (widget.isCaller) {
-      _ringTimer = Timer(const Duration(seconds: 30), () async {
-        if (!_connected && mounted) {
-          await _updateCallStatus('missed');
-          CallState.instance.endActive();
-          Navigator.pop(context);
+      _peerConnection!.onTrack = (RTCTrackEvent event) {
+        debugPrint('onTrack fired, streams=${event.streams.length}');
+        if (event.streams.isNotEmpty) {
+          _remoteRenderer.srcObject = event.streams.first;
+          _markConnected();
         }
-      });
-    } else {
-      // 🔥 BÊN NHẬN báo đã sẵn sàng
-      _signaling.send({'type': 'ready'});
-      debugPrint('callee sent ready');
+      };
+
+      _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
+        debugPrint('send candidate');
+        _signaling?.send({'type': 'candidate', 'candidate': candidate.toMap()});
+      };
+
+      if (widget.isCaller) {
+        _ringTimer = Timer(const Duration(seconds: 30), () async {
+          if (!_connected && !_ending && mounted) {
+            await _updateCallStatus('missed');
+            await _closeCallScreen();
+          }
+        });
+      } else {
+        _signaling?.send({'type': 'ready'});
+        debugPrint('callee sent ready');
+      }
+    } catch (e) {
+      debugPrint('call init failed: $e');
+      if (mounted) {
+        final message = kIsWeb
+            ? 'Không thể khởi tạo cuộc gọi. Hãy cho phép camera/micro trong trình duyệt và dùng http://localhost hoặc https.'
+            : 'Không thể khởi tạo cuộc gọi. Hãy kiểm tra quyền camera/micro của ứng dụng trên thiết bị.';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+      await _closeCallScreen();
     }
   }
 
@@ -145,7 +177,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     final offer = await _peerConnection!.createOffer();
     await _peerConnection!.setLocalDescription(offer);
 
-    _signaling.send({'type': 'offer', 'sdp': offer.sdp, 'sdpType': offer.type});
+    _signaling?.send({'type': 'offer', 'sdp': offer.sdp, 'sdpType': offer.type});
 
     debugPrint('caller sent offer');
   }
@@ -155,7 +187,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     debugPrint('signal type = $type');
 
     if (type == 'ready' && widget.isCaller) {
-      // 🔥 Chỉ khi bên nhận sẵn sàng thì caller mới gửi offer
       await _createAndSendOffer();
     } else if (type == 'offer' && !widget.isCaller) {
       final offer = RTCSessionDescription(
@@ -167,12 +198,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       final answer = await _peerConnection!.createAnswer();
       await _peerConnection!.setLocalDescription(answer);
 
-      _signaling.send({
+      _signaling?.send({
         'type': 'answer',
         'sdp': answer.sdp,
         'sdpType': answer.type,
       });
 
+      _markConnected();
       debugPrint('callee sent answer');
     } else if (type == 'answer' && widget.isCaller) {
       final answer = RTCSessionDescription(
@@ -180,27 +212,30 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         data['sdpType'] as String,
       );
       await _peerConnection!.setRemoteDescription(answer);
-      if (mounted) setState(() => _connected = true);
+      _markConnected();
       debugPrint('caller received answer');
     } else if (type == 'candidate') {
       final c = data['candidate'] as Map<String, dynamic>;
-      await _peerConnection!.addCandidate(
-        RTCIceCandidate(c['candidate'], c['sdpMid'], c['sdpMLineIndex']),
-      );
-    } else if (type == 'hangup') {
-      if (mounted) {
-        CallState.instance.endActive();
-        Navigator.pop(context);
+      if (_peerConnection != null) {
+        await _peerConnection!.addCandidate(
+          RTCIceCandidate(c['candidate'], c['sdpMid'], c['sdpMLineIndex']),
+        );
       }
+    } else if (type == 'hangup') {
+      await _closeCallScreen();
     }
   }
 
   Future<void> _hangup() async {
-    _signaling.send({'type': 'hangup'});
-    await _updateCallStatus('ended');
-    if (!mounted) return;
+    if (_ending) return;
+    _ending = true;
+    _ringTimer?.cancel();
+    _signaling?.send({'type': 'hangup'});
+    await _updateCallStatus(_connected ? 'ended' : 'canceled');
     CallState.instance.endActive();
-    Navigator.pop(context);
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.pop(context);
+    }
   }
 
   void _toggleMic() {

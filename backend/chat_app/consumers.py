@@ -1,76 +1,70 @@
 import json
+
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-class CoreConsumer(AsyncWebsocketConsumer):
+
+class _BaseJsonConsumer(AsyncWebsocketConsumer):
+    group_name = ""
+
     async def connect(self):
-        self.username = self.scope['url_route']['kwargs']['username']
-
-        self.user_group = f"user_{self.username}"
-
-        await self.channel_layer.group_add(
-            self.user_group,
-            self.channel_name
-        )
-
+        self.group_name = self.get_group_name()
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
-        # presence online
-        await self.channel_layer.group_send(
-            self.user_group,
-            {
-                "type": "send_event",
-                "payload": {
-                    "type": "presence",
-                    "status": "online"
-                }
-            }
-        )
-
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.user_group,
-            self.channel_name
-        )
+        if self.group_name:
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        event_type = data.get("type")
+        try:
+            payload = json.loads(text_data or "{}")
+        except json.JSONDecodeError:
+            return
+        await self.handle_payload(payload)
 
-        # ================= CHAT =================
-        if event_type == "message":
-            to_user = data.get("to")
+    async def handle_payload(self, payload):
+        return
 
-            await self.channel_layer.group_send(
-                f"user_{to_user}",
-                {
-                    "type": "send_event",
-                    "payload": data
-                }
-            )
+    async def _broadcast(self, payload):
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                "type": "push.event",
+                "payload": payload,
+                "sender_channel": self.channel_name,
+            },
+        )
 
-        # ================= CALL SIGNAL =================
-        elif event_type == "call_signal":
-            to_user = data.get("to")
+    async def push_event(self, event):
+        if event.get("sender_channel") == self.channel_name:
+            return
+        await self.send(text_data=json.dumps(event.get("payload", {})))
 
-            await self.channel_layer.group_send(
-                f"user_{to_user}",
-                {
-                    "type": "send_event",
-                    "payload": data
-                }
-            )
+    def get_group_name(self):
+        raise NotImplementedError
 
-        # ================= TYPING =================
-        elif event_type == "typing":
-            to_user = data.get("to")
 
-            await self.channel_layer.group_send(
-                f"user_{to_user}",
-                {
-                    "type": "send_event",
-                    "payload": data
-                }
-            )
+class NotificationConsumer(_BaseJsonConsumer):
+    def get_group_name(self):
+        username = self.scope["url_route"]["kwargs"]["username"]
+        return f"user_{username}"
 
-    async def send_event(self, event):
-        await self.send(text_data=json.dumps(event["payload"]))
+
+class ChatConsumer(_BaseJsonConsumer):
+    def get_group_name(self):
+        conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
+        return f"chat_{conversation_id}"
+
+    async def handle_payload(self, payload):
+        if payload.get("type") == "typing":
+            await self._broadcast(payload)
+
+
+class CallConsumer(_BaseJsonConsumer):
+    def get_group_name(self):
+        conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
+        return f"call_{conversation_id}"
+
+    async def handle_payload(self, payload):
+        if payload.get("type") in {"ready", "offer", "answer", "candidate", "hangup"}:
+            await self._broadcast(payload)

@@ -29,7 +29,7 @@ class AppApi {
   static String get chat => '$host/api/chat';
   static String get notifications => '$host/api/notifications';
   static String wsNotifications(String username) =>
-      '$wsHost/ws/notifications/$username';
+      '$wsHost/ws/notifications/$username/';
 
   static String wsCall(int conversationId) =>
       '$wsHost/ws/call/$conversationId/';

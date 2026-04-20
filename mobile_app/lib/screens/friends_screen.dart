@@ -2,13 +2,13 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/core/app_api.dart';
-import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
+import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/screens/messages_screen.dart';
-import 'package:mobile_app/screens/profile_screen.dart';
 import 'package:mobile_app/theme/app_theme.dart';
 
 Widget _avatar(String name, {double radius = 20}) {
@@ -39,12 +39,11 @@ class _FriendsScreenState extends State<FriendsScreen>
   Timer? _searchDebounce;
 
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _friendSearchController = TextEditingController();
+
   List<_ProfileMini> _searchResults = [];
   bool _searching = false;
   final Set<String> _hiddenSuggestionUsernames = <String>{};
-
-  final TextEditingController _friendSearchController =
-      TextEditingController();
 
   @override
   void initState() {
@@ -57,7 +56,6 @@ class _FriendsScreenState extends State<FriendsScreen>
     );
 
     _load();
-
     _timer = Timer.periodic(
       const Duration(seconds: 3),
       (_) => _load(silent: true),
@@ -74,61 +72,107 @@ class _FriendsScreenState extends State<FriendsScreen>
     super.dispose();
   }
 
-  Future<void> _load({bool silent = false}) async {
-    if (!silent && mounted) setState(() => _loading = true);
-
+  Future<_ApiResponse> _safeGet(String url) async {
     try {
-      final results = await Future.wait([
-        http.get(
-          Uri.parse('${AppApi.users}/friends/requests/inbox/'),
-          headers: AppSession.authHeaders(),
-        ),
-        http.get(
-          Uri.parse('${AppApi.users}/friends/requests/sent/'),
-          headers: AppSession.authHeaders(),
-        ),
-        http.get(
-          Uri.parse('${AppApi.users}/friends/'),
-          headers: AppSession.authHeaders(),
-        ),
-        http.get(
-          Uri.parse('${AppApi.users}/friends/suggestions/'),
-          headers: AppSession.authHeaders(),
-        ),
-      ]);
-
-      if (!mounted) return;
-
-      if (results.any((res) => res.statusCode >= 400)) {
-        setState(() => _loading = false);
-        _showSnack('Không tải được danh sách bạn bè, vui lòng thử lại.');
-        return;
-      }
-
-      _requests = (jsonDecode(results[0].body) as List)
-          .map((e) => _RequestItem.fromJson(e, incoming: true))
-          .toList();
-
-      _sent = (jsonDecode(results[1].body) as List)
-          .map((e) => _RequestItem.fromJson(e, incoming: false))
-          .toList();
-
-      _friends = ((jsonDecode(results[2].body)['friends'] ?? []) as List)
-          .map((e) => _ProfileMini.fromJson(e))
-          .toList();
-
-      _suggestions = ((jsonDecode(results[3].body)['results'] ?? []) as List)
-          .map((e) => _ProfileMini.fromJson(e))
-          .where((e) => !_hiddenSuggestionUsernames.contains(e.username))
-          .toList();
-
-      setState(() => _loading = false);
+      final res = await http
+          .get(Uri.parse(url), headers: AppSession.authHeaders())
+          .timeout(const Duration(seconds: 8));
+      return _ApiResponse(statusCode: res.statusCode, body: res.body);
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      return const _ApiResponse(statusCode: 0, body: '');
     }
   }
 
-  // ================= CARD DÙNG CHUNG =================
+  List<dynamic> _decodeList(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is List ? decoded : const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Map<String, dynamic> _decodeMap(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is Map<String, dynamic> ? decoded : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && mounted) {
+      setState(() => _loading = true);
+    }
+
+    final results = await Future.wait([
+      _safeGet('${AppApi.users}/friends/requests/inbox/'),
+      _safeGet('${AppApi.users}/friends/requests/sent/'),
+      _safeGet('${AppApi.users}/friends/'),
+      _safeGet('${AppApi.users}/friends/suggestions/'),
+    ]);
+
+    if (!mounted) return;
+
+    final inboxOk = results[0].statusCode == 200;
+    final sentOk = results[1].statusCode == 200;
+    final friendsOk = results[2].statusCode == 200;
+    final suggestionsOk = results[3].statusCode == 200;
+
+    final requests = inboxOk
+        ? _decodeList(results[0].body)
+              .map(
+                (e) => _RequestItem.fromJson(
+                  e as Map<String, dynamic>,
+                  incoming: true,
+                ),
+              )
+              .toList()
+        : _requests;
+
+    final sent = sentOk
+        ? _decodeList(results[1].body)
+              .map(
+                (e) => _RequestItem.fromJson(
+                  e as Map<String, dynamic>,
+                  incoming: false,
+                ),
+              )
+              .toList()
+        : _sent;
+
+    final friends = friendsOk
+        ? ((_decodeMap(results[2].body)['friends'] as List<dynamic>? ??
+                  const [])
+              .map((e) => _ProfileMini.fromJson(e as Map<String, dynamic>))
+              .toList())
+        : _friends;
+
+    final suggestions = suggestionsOk
+        ? ((_decodeMap(results[3].body)['results'] as List<dynamic>? ??
+                  const [])
+              .map((e) => _ProfileMini.fromJson(e as Map<String, dynamic>))
+              .where((e) => !_hiddenSuggestionUsernames.contains(e.username))
+              .toList())
+        : _suggestions;
+
+    setState(() {
+      _requests = requests;
+      _sent = sent;
+      _friends = friends;
+      _suggestions = suggestions;
+      _loading = false;
+    });
+
+    if (!friendsOk && !silent) {
+      _showSnack('Không thể tải danh sách bạn bè.');
+    } else if ((!inboxOk || !sentOk || !suggestionsOk) && !silent) {
+      _showSnack(
+        'Một phần dữ liệu chưa tải được, ứng dụng đang hiển thị phần còn lại.',
+      );
+    }
+  }
 
   void _openUserCard(
     _ProfileMini profile,
@@ -166,7 +210,6 @@ class _FriendsScreenState extends State<FriendsScreen>
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-
               Row(
                 children: [
                   if (type == 'friend')
@@ -186,7 +229,6 @@ class _FriendsScreenState extends State<FriendsScreen>
                         child: const Text('Nhắn tin'),
                       ),
                     ),
-
                   if (type == 'request') ...[
                     Expanded(
                       child: OutlinedButton(
@@ -208,14 +250,13 @@ class _FriendsScreenState extends State<FriendsScreen>
                       ),
                     ),
                   ],
-
                   if (type == 'suggestion') ...[
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () {
                           Navigator.pop(context);
                         },
-                        child: const Text('Xóa'),
+                        child: const Text('Đóng'),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -225,7 +266,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                           Navigator.pop(context);
                           await _sendRequest(profile.username);
                         },
-                        child: const Text('Thêm'),
+                        child: const Text('Kết bạn'),
                       ),
                     ),
                   ],
@@ -237,8 +278,6 @@ class _FriendsScreenState extends State<FriendsScreen>
       ),
     );
   }
-
-  // ================= API =================
 
   Future<void> _decide(_RequestItem item, String action) async {
     final res = await http.post(
@@ -261,9 +300,7 @@ class _FriendsScreenState extends State<FriendsScreen>
       headers: AppSession.authHeaders(
         extra: const {'Content-Type': 'application/json'},
       ),
-      body: jsonEncode({
-        'to_username': username,
-      }),
+      body: jsonEncode({'to_username': username}),
     );
     if (res.statusCode >= 400) {
       _showSnack('Không gửi được lời mời kết bạn.');
@@ -291,11 +328,9 @@ class _FriendsScreenState extends State<FriendsScreen>
     setState(() => _searching = true);
 
     try {
-      final uri = Uri.parse('${AppApi.users}/search/').replace(
-        queryParameters: {
-          'q': q,
-        },
-      );
+      final uri = Uri.parse(
+        '${AppApi.users}/search/',
+      ).replace(queryParameters: {'q': q});
       final res = await http
           .get(uri, headers: AppSession.authHeaders())
           .timeout(const Duration(seconds: 8));
@@ -331,30 +366,209 @@ class _FriendsScreenState extends State<FriendsScreen>
     }
   }
 
-  Widget _actionCircleButton({
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _buildStatCard({
+    required String label,
+    required String value,
     required IconData icon,
-    required VoidCallback onTap,
-    required Color background,
-    Color iconColor = Colors.white,
   }) {
-    return Material(
-      color: background,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 34,
-          height: 34,
-          child: Icon(icon, size: 18, color: iconColor),
+    return SizedBox(
+      width: 180,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.outline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: AppColors.primary),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(color: AppColors.textSecondary)),
+          ],
         ),
       ),
     );
   }
 
-  void _showSnack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  Widget _buildSectionHeader(String title, String caption) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(caption, style: const TextStyle(color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.outline),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 42, color: AppColors.primary),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileCard({
+    required _ProfileMini profile,
+    required String subtitle,
+    required List<Widget> actions,
+    required VoidCallback onTap,
+    String? tag,
+  }) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.outline),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _avatar(
+                profile.fullName.isEmpty ? profile.username : profile.fullName,
+                radius: 24,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            profile.fullName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        if (tag != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceVariant,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              tag,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (profile.classCode.isNotEmpty ||
+                        profile.major.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          '${profile.classCode} • ${profile.major}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+                    Row(children: actions),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFriendsTab() {
@@ -364,18 +578,26 @@ class _FriendsScreenState extends State<FriendsScreen>
         : _friends.where((f) {
             final fullName = f.fullName.toLowerCase();
             final studentId = f.studentId.toLowerCase();
-            return fullName.contains(query) || studentId.contains(query);
+            final username = f.username.toLowerCase();
+            return fullName.contains(query) ||
+                studentId.contains(query) ||
+                username.contains(query);
           }).toList();
 
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
+        _buildSectionHeader(
+          'Mạng lưới bạn bè',
+          'Tìm nhanh và mở chat với những kết nối đã xác nhận.',
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: TextField(
             controller: _friendSearchController,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              hintText: 'Tìm bạn bè theo tên hoặc mã sinh viên',
+              hintText: 'Tìm theo tên hoặc mã sinh viên',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: _friendSearchController.text.isEmpty
                   ? null
@@ -386,55 +608,129 @@ class _FriendsScreenState extends State<FriendsScreen>
                         setState(() {});
                       },
                     ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
             ),
           ),
         ),
-        Expanded(
-          child: filteredFriends.isEmpty
-              ? Center(
-                  child: Text(
-                    query.isEmpty
-                        ? 'Chưa có bạn bè'
-                        : 'Không tìm thấy bạn bè phù hợp',
+        if (filteredFriends.isEmpty)
+          _buildEmptyState(
+            icon: Icons.group_outlined,
+            title: query.isEmpty ? 'Chưa có bạn bè' : 'Không tìm thấy kết quả',
+            subtitle: query.isEmpty
+                ? 'Sau khi chấp nhận lời mời, danh sách bạn bè sẽ hiện ở đây.'
+                : 'Thử tìm bằng tên đầy đủ, username hoặc mã sinh viên.',
+          )
+        else
+          ...filteredFriends.map(
+            (f) => _buildProfileCard(
+              profile: f,
+              subtitle: '${f.studentId} • ${f.email}',
+              actions: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _openUserCard(f, 'friend'),
+                    child: const Text('Xem hồ sơ'),
                   ),
-                )
-              : ListView.builder(
-                  itemCount: filteredFriends.length,
-                  itemBuilder: (_, i) {
-                    final f = filteredFriends[i];
-                    return ListTile(
-                      leading: _avatar(
-                        f.fullName.isEmpty ? f.username : f.fullName,
-                      ),
-                      title: Text(
-                        f.fullName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      subtitle: Text('${f.studentId} • ${f.email}'),
-                      trailing: _actionCircleButton(
-                        icon: Icons.message_rounded,
-                        background: const Color(0xFFE53935),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MessagesScreen(
-                                openPeerUsername: f.username,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      onTap: () => _openUserCard(f, 'friend'),
-                    );
-                  },
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              MessagesScreen(openPeerUsername: f.username),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                    label: const Text('Nhắn tin'),
+                  ),
+                ),
+              ],
+              onTap: () => _openUserCard(f, 'friend'),
+              tag: 'Bạn bè',
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRequestsTab() {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        _buildSectionHeader(
+          'Quản lý lời mời',
+          'Phân loại lời mời đến và các yêu cầu đang chờ phản hồi.',
         ),
+        if (_requests.isEmpty)
+          _buildEmptyState(
+            icon: Icons.mail_outline_rounded,
+            title: 'Không có lời mời mới',
+            subtitle:
+                'Khi có sinh viên gửi lời mời kết bạn, mục này sẽ cập nhật.',
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Text(
+              'Lời mời nhận được',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          ..._requests.map(
+            (e) => _buildProfileCard(
+              profile: e.profile,
+              subtitle: '${e.profile.studentId} • ${e.profile.email}',
+              actions: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _decide(e, 'reject'),
+                    child: const Text('Từ chối'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _decide(e, 'accept'),
+                    child: const Text('Chấp nhận'),
+                  ),
+                ),
+              ],
+              onTap: () => _openUserCard(e.profile, 'request', request: e),
+              tag: 'Chờ xử lý',
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Text('Đã gửi', style: Theme.of(context).textTheme.titleMedium),
+        ),
+        if (_sent.isEmpty)
+          _buildEmptyState(
+            icon: Icons.send_outlined,
+            title: 'Bạn chưa gửi lời mời nào',
+            subtitle: 'Sang tab Gợi ý để tìm thêm kết nối mới.',
+          )
+        else
+          ..._sent.map(
+            (e) => _buildProfileCard(
+              profile: e.profile,
+              subtitle: '${e.profile.studentId} • ${e.profile.email}',
+              actions: const [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: null,
+                    child: Text('Đang chờ phản hồi'),
+                  ),
+                ),
+              ],
+              onTap: () => _openUserCard(e.profile, 'suggestion'),
+              tag: 'Đang chờ',
+            ),
+          ),
       ],
     );
   }
@@ -443,10 +739,15 @@ class _FriendsScreenState extends State<FriendsScreen>
     final hasQuery = _searchController.text.trim().isNotEmpty;
     final items = hasQuery ? _searchResults : _suggestions;
 
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
+        _buildSectionHeader(
+          'Kết nối mới',
+          'Tìm sinh viên theo tên, mã sinh viên và gửi lời mời ngay trong app.',
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: TextField(
             controller: _searchController,
             onChanged: (value) {
@@ -470,73 +771,60 @@ class _FriendsScreenState extends State<FriendsScreen>
                         setState(() {});
                       },
                     ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
             ),
           ),
         ),
-        Expanded(
-          child: _searching
-              ? const Center(child: CircularProgressIndicator())
-              : items.isEmpty
-                  ? Center(
-                      child: Text(
-                        hasQuery
-                            ? 'Không tìm thấy người phù hợp'
-                            : 'Chưa có gợi ý kết bạn',
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: items.length,
-                      itemBuilder: (_, i) {
-                        final s = items[i];
-                        return ListTile(
-                          leading: _avatar(
-                            s.fullName.isEmpty ? s.username : s.fullName,
-                          ),
-                          title: Text(
-                            s.fullName,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          subtitle: Text('${s.studentId} • ${s.email}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _actionCircleButton(
-                                icon: Icons.close_rounded,
-                                background: Colors.white,
-                                iconColor: AppColors.primary,
-                                onTap: () {
-                                  setState(() {
-                                    _hiddenSuggestionUsernames.add(s.username);
-                                    _suggestions.removeWhere(
-                                      (e) => e.username == s.username,
-                                    );
-                                    _searchResults.removeWhere(
-                                      (e) => e.username == s.username,
-                                    );
-                                  });
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              _actionCircleButton(
-                                icon: Icons.person_add_alt_1_rounded,
-                                background: AppColors.primary,
-                                onTap: () => _sendRequest(s.username),
-                              ),
-                            ],
-                          ),
-                          onTap: () => _openUserCard(s, 'suggestion'),
+        if (_searching)
+          const Padding(
+            padding: EdgeInsets.only(top: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (items.isEmpty)
+          _buildEmptyState(
+            icon: Icons.search_rounded,
+            title: hasQuery ? 'Không tìm thấy người phù hợp' : 'Chưa có gợi ý',
+            subtitle: hasQuery
+                ? 'Thử đổi từ khóa tìm kiếm để mở rộng kết quả.'
+                : 'Hệ thống sẽ đề xuất những sinh viên có thể bạn quen.',
+          )
+        else
+          ...items.map(
+            (s) => _buildProfileCard(
+              profile: s,
+              subtitle: '${s.studentId} • ${s.email}',
+              actions: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _hiddenSuggestionUsernames.add(s.username);
+                        _suggestions.removeWhere(
+                          (e) => e.username == s.username,
                         );
-                      },
-                    ),
-        ),
+                        _searchResults.removeWhere(
+                          (e) => e.username == s.username,
+                        );
+                      });
+                    },
+                    child: const Text('Bỏ qua'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _sendRequest(s.username),
+                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                    label: const Text('Kết bạn'),
+                  ),
+                ),
+              ],
+              onTap: () => _openUserCard(s, 'suggestion'),
+              tag: hasQuery ? 'Kết quả tìm' : 'Gợi ý',
+            ),
+          ),
       ],
     );
   }
-
-  // ================= UI =================
 
   @override
   Widget build(BuildContext context) {
@@ -545,6 +833,9 @@ class _FriendsScreenState extends State<FriendsScreen>
         title: const Text('Bạn bè'),
         bottom: TabBar(
           controller: _tabController,
+          indicatorColor: AppColors.primary,
+          labelColor: AppColors.primary,
+          unselectedLabelColor: AppColors.textSecondary,
           tabs: const [
             Tab(text: 'Bạn bè'),
             Tab(text: 'Lời mời'),
@@ -554,97 +845,96 @@ class _FriendsScreenState extends State<FriendsScreen>
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildFriendsTab(),
-                ListView(
-                  children: [
-                    const ListTile(
-                      title: Text(
-                        'Lời mời nhận được',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
+          : NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFF0F5), Color(0xFFFFD7E5)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    if (_requests.isEmpty)
-                      const ListTile(
-                        title: Text('Không có lời mời nào'),
-                      )
-                    else
-                      ..._requests.map(
-                        (e) => ListTile(
-                          leading: _avatar(
-                            e.profile.fullName.isEmpty
-                                ? e.profile.username
-                                : e.profile.fullName,
-                          ),
-                          title: Text(
-                            e.profile.fullName,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          subtitle: Text(
-                            '${e.profile.studentId} • ${e.profile.email}',
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Kết bạn PTIT',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Quản lý kết nối, xử lý lời mời và mở chat nhanh.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      ScrollConfiguration(
+                        behavior: const MaterialScrollBehavior().copyWith(
+                          dragDevices: {
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.trackpad,
+                          },
+                        ),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
                             children: [
-                              _actionCircleButton(
-                                icon: Icons.close_rounded,
-                                background: Colors.white,
-                                iconColor: AppColors.primary,
-                                onTap: () => _decide(e, 'reject'),
-                              ),
-                              const SizedBox(width: 8),
-                              _actionCircleButton(
-                                icon: Icons.check_rounded,
-                                background: AppColors.primary,
-                                onTap: () => _decide(e, 'accept'),
-                              ),
+                            _buildStatCard(
+                              label: 'Bạn bè',
+                              value: '${_friends.length}',
+                              icon: Icons.group_rounded,
+                            ),
+                            const SizedBox(width: 12),
+                            _buildStatCard(
+                              label: 'Lời mời mới',
+                              value: '${_requests.length}',
+                              icon: Icons.mail_outline_rounded,
+                            ),
+                            const SizedBox(width: 12),
+                            _buildStatCard(
+                              label: 'Gợi ý',
+                              value: '${_suggestions.length}',
+                              icon: Icons.search_rounded,
+                            ),
                             ],
                           ),
-                          onTap: () =>
-                              _openUserCard(e.profile, 'request', request: e),
                         ),
                       ),
-                    const Divider(height: 24),
-                    const ListTile(
-                      title: Text(
-                        'Đã gửi',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    if (_sent.isEmpty)
-                      const ListTile(
-                        title: Text('Bạn chưa gửi lời mời nào'),
-                      )
-                    else
-                      ..._sent.map(
-                        (e) => ListTile(
-                          leading: _avatar(
-                            e.profile.fullName.isEmpty
-                                ? e.profile.username
-                                : e.profile.fullName,
-                          ),
-                          title: Text(
-                            e.profile.fullName,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          subtitle: Text(
-                            '${e.profile.studentId} • ${e.profile.email}',
-                          ),
-                          trailing: const Text(
-                            'Đang chờ',
-                            style: TextStyle(color: Colors.black54),
-                          ),
-                        ),
-                      ),
-                  ],
+                    ],
+                  ),
+                  ),
                 ),
-                _buildAddFriendTab(),
               ],
+              body: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildFriendsTab(),
+                  _buildRequestsTab(),
+                  _buildAddFriendTab(),
+                ],
+              ),
             ),
     );
   }
+}
+
+class _ApiResponse {
+  final int statusCode;
+  final String body;
+
+  const _ApiResponse({required this.statusCode, required this.body});
 }
 
 class _RequestItem {
@@ -660,7 +950,9 @@ class _RequestItem {
     return _RequestItem(
       id: json['id'] ?? 0,
       profile: _ProfileMini.fromJson(
-        incoming ? json['from_profile'] : json['to_profile'],
+        (incoming ? json['from_profile'] : json['to_profile'])
+                as Map<String, dynamic>? ??
+            const {},
       ),
     );
   }
@@ -686,14 +978,16 @@ class _ProfileMini {
   });
 
   factory _ProfileMini.fromJson(Map<String, dynamic> json) {
+    final username = (json['username'] ?? '').toString();
+    final fullName = (json['full_name'] ?? '').toString();
     return _ProfileMini(
-      username: json['username'] ?? '',
-      fullName: json['full_name'] ?? '',
-      studentId: json['student_id'] ?? '',
-      email: json['email'] ?? '',
-      classCode: json['class_code'] ?? '',
-      major: json['major'] ?? '',
-      avatar: json['avatar_url'] ?? json['avatar'] ?? '',
+      username: username,
+      fullName: fullName.isEmpty ? username : fullName,
+      studentId: (json['student_id'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      classCode: (json['class_code'] ?? '').toString(),
+      major: (json['major'] ?? '').toString(),
+      avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString(),
     );
   }
 }

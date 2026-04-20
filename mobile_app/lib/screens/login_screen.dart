@@ -55,15 +55,15 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_isSubmitting) return;
 
     final email = _emailController.text.trim().toLowerCase();
-    final derivedUsername = email.split('@').first;
     final password = _passwordController.text;
+    String username = '';
     setState(() => _isSubmitting = true);
 
     try {
       final res = await http.post(
         Uri.parse('${AppApi.users}/login/'),
         headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': derivedUsername, 'password': password}),
+        body: jsonEncode({'email': email, 'password': password}),
       );
 
       if (res.statusCode != 200) {
@@ -81,7 +81,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
       final access = (body['access'] ?? '').toString();
       final refresh = (body['refresh'] ?? '').toString();
-      if (access.isEmpty || refresh.isEmpty) {
+      username = (body['username'] ?? '').toString();
+      if (access.isEmpty || refresh.isEmpty || username.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Không nhận được token đăng nhập.')),
@@ -90,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       await AppSession.saveLogin(
-        usernameValue: derivedUsername,
+        usernameValue: username,
         accessTokenValue: access,
         refreshTokenValue: refresh,
       );
@@ -110,8 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // LOGIC PHÂN LUỒNG:
     // Nếu email là admin@stu.ptit.edu.vn hoặc có chứa từ 'admin' ở tiền tố
-    if (email == 'admin@stu.ptit.edu.vn' ||
-        derivedUsername.startsWith('admin')) {
+    if (email == 'admin@stu.ptit.edu.vn' || username.startsWith('admin')) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
