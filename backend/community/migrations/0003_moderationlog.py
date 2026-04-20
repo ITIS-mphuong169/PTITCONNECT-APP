@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("community", "0002_comment_parent_post_file_post_image"),
+        ("community", "0001_initial"),
     ]
 
     operations = [
