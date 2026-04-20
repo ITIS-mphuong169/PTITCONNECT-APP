@@ -5,6 +5,8 @@ import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/home_shell_screen.dart';
 import 'package:mobile_app/screens/login_screen.dart';
 
+import 'package:mobile_app/services/notification_socket_service.dart';
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -18,7 +20,10 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
+
       if (AppSession.isLoggedIn) {
+        NotificationSocketService.instance.connect();
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const HomeShellScreen()),

@@ -22,9 +22,15 @@ class AppApi {
 
   static String get baseOrigin => host;
   static String get users => '$host/api/users';
+  static String get friends => '$host/api/users/friends';
   static String get community => '$host/api/community';
   static String get documents => '$host/api/documents';
   static String get groups => '$host/api/groups';
   static String get chat => '$host/api/chat';
   static String get notifications => '$host/api/notifications';
+  static String wsNotifications(String username) =>
+      '$wsHost/ws/notifications/$username/';
+
+  static String wsCall(int conversationId) =>
+      '$wsHost/ws/call/$conversationId/';
 }

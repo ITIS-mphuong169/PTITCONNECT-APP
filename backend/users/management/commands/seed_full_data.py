@@ -1,5 +1,4 @@
 import random
-import requests
 import unicodedata
 from collections import defaultdict
 
@@ -9,7 +8,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from users.models import Profile, FriendRequest
-from chat_app.models import Conversation, Message
+from chat_app.models import Conversation, ConversationParticipant, Message
 from notifications_app.models import Notification
 
 from community.models import Comment, Post, PostLike, SavedPost
@@ -18,10 +17,11 @@ from groups_app.models import GroupMember, JoinRequest, StudyGroup
 
 
 def remove_accents(text):
-    return ''.join(
+    normalized = ''.join(
         c for c in unicodedata.normalize('NFD', text)
         if unicodedata.category(c) != 'Mn'
     )
+    return normalized.replace("đ", "d").replace("Đ", "D")
 
 
 def generate_ptit_email(full_name, student_id):
@@ -43,6 +43,30 @@ def generate_ptit_email(full_name, student_id):
     last5 = student_id[-5:].upper()
 
     return f"{first_name}{initials}.{first3}{last5}@stu.ptit.edu.vn"
+
+
+def generate_username_from_name(full_name, used_usernames):
+    base = remove_accents(full_name).lower().strip()
+    normalized = []
+    for char in base:
+        if char.isalnum():
+            normalized.append(char)
+        elif char in {" ", "-", "_"}:
+            normalized.append(".")
+    username = "".join(normalized).strip(".")
+    while ".." in username:
+        username = username.replace("..", ".")
+    if not username:
+        username = "student"
+
+    candidate = username
+    suffix = 2
+    while candidate in used_usernames:
+        candidate = f"{username}.{suffix}"
+        suffix += 1
+
+    used_usernames.add(candidate)
+    return candidate
 
 
 class Command(BaseCommand):
@@ -73,11 +97,11 @@ class Command(BaseCommand):
         self.stdout.write("CHAT...")
         conv_map = self.create_chat(users, friend_map)
 
-        self.stdout.write("NOTIFICATIONS...")
-        self.create_notifications(users, friend_map, pending_in, conv_map)
-
         self.stdout.write("COMMUNITY...")
-        self.seed_community(users)
+        posts = self.seed_community(users)
+
+        self.stdout.write("NOTIFICATIONS...")
+        self.create_notifications(users, friend_map, pending_in, conv_map, posts)
 
         self.stdout.write("DOCUMENTS...")
         self.seed_documents(users)
@@ -92,6 +116,7 @@ class Command(BaseCommand):
                 f"Profiles={Profile.objects.count()}, "
                 f"FriendRequests={FriendRequest.objects.count()}, "
                 f"Conversations={Conversation.objects.count()}, "
+                f"ConversationParticipants={ConversationParticipant.objects.count()}, "
                 f"Messages={Message.objects.count()}, "
                 f"Notifications={Notification.objects.count()}, "
                 f"Posts={Post.objects.count()}, "
@@ -99,12 +124,20 @@ class Command(BaseCommand):
                 f"Groups={StudyGroup.objects.count()}"
             )
         )
-        self.stdout.write(self.style.WARNING("Demo login: sv001 / 123456"))
+        if users:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Demo login: {users[0].email} / {self.PASSWORD}"
+                )
+            )
 
     def reset_all(self):
         Notification.objects.all().delete()
+
         Message.objects.all().delete()
+        ConversationParticipant.objects.all().delete()
         Conversation.objects.all().delete()
+
         FriendRequest.objects.all().delete()
 
         Comment.objects.all().delete()
@@ -141,8 +174,8 @@ class Command(BaseCommand):
         addresses = ["Hà Nội", "Bắc Ninh", "Hưng Yên", "Hải Dương", "Nam Định"]
 
         users = []
+        used_usernames = set()
         for i in range(1, self.TOTAL_USERS + 1):
-            username = f"sv{i:03d}"
             student_id = f"B22DCCN{i:03d}"
 
             full_name = (
@@ -150,6 +183,7 @@ class Command(BaseCommand):
                 f"{random.choice(middle_names)} "
                 f"{random.choice(first_names)}"
             )
+            username = generate_username_from_name(full_name, used_usernames)
             email = generate_ptit_email(full_name, student_id)
 
             user = User.objects.create_user(
@@ -170,24 +204,6 @@ class Command(BaseCommand):
             )
             profile.address = random.choice(addresses)
             profile.bio = "Sinh viên PTIT - sẵn sàng kết nối học tập."
-
-            try:
-                gender_query = "male" if profile.gender == "Nam" else "female"
-                res = requests.get(
-                    f"https://randomuser.me/api/?gender={gender_query}",
-                    timeout=5,
-                )
-                data = res.json()
-                avatar_url = data["results"][0]["picture"]["large"]
-                img_res = requests.get(avatar_url, timeout=5)
-
-                profile.avatar.save(
-                    f"{username}.jpg",
-                    ContentFile(img_res.content),
-                    save=False,
-                )
-            except Exception as e:
-                print("Avatar error:", e)
 
             profile.save()
             users.append(user)
@@ -255,13 +271,13 @@ class Command(BaseCommand):
 
     def create_chat(self, users, friend_map):
         """
-        15 chat partners / user.
-        20-30 messages / conversation.
+        Tạo cả direct chat và group chat theo model mới:
+        - Direct chat: 2 participants
+        - Group chat: >= 3 participants
         """
         conv_map = defaultdict(list)
-        offsets = list(range(1, 8)) + [len(users) // 2]
 
-        samples = [
+        direct_samples = [
             "Chào bạn, hôm nay học nhóm không?",
             "Mình vừa up tài liệu mới, bạn xem nhé.",
             "Mai kiểm tra rồi, ôn phần database chưa?",
@@ -279,6 +295,22 @@ class Command(BaseCommand):
             "Mình vừa sửa xong backend rồi.",
         ]
 
+        group_samples = [
+            "Mọi người ơi tối nay họp nhóm nhé.",
+            "Ai làm phần backend rồi cập nhật giúp mình.",
+            "Nhóm mình chia task chưa nhỉ?",
+            "Bạn nào rảnh review UI giúp mình với.",
+            "Deadline bài tập là thứ 6 đó nha.",
+            "Mình vừa push code mới lên repo rồi.",
+            "Check tin nhắn và phản hồi giúp mình nhé.",
+            "Tài liệu mình gửi ở trên, mọi người xem thử.",
+            "Mai lên thư viện học nhóm không mọi người?",
+            "Ai phụ trách slide thuyết trình vậy?",
+        ]
+
+        # ===== DIRECT CHAT =====
+        offsets = list(range(1, 8)) + [len(users) // 2]
+
         for i in range(len(users)):
             for off in offsets:
                 j = (i + off) % len(users)
@@ -290,22 +322,106 @@ class Command(BaseCommand):
                     continue
 
                 conv = Conversation.objects.create(
-                    user1=u1,
-                    user2=u2,
-                    updated_at=timezone.now(),
+                    title="",
+                    is_group=False,
+                    created_by=u1,
+                    owner=None,
+                    is_active=True,
                 )
 
-                for _ in range(random.randint(20, 30)):
+                ConversationParticipant.objects.create(
+                    conversation=conv,
+                    user=u1,
+                    role="member",
+                    status="active",
+                )
+                ConversationParticipant.objects.create(
+                    conversation=conv,
+                    user=u2,
+                    role="member",
+                    status="active",
+                )
+
+                total_messages = random.randint(20, 30)
+                for _ in range(total_messages):
                     msg = Message.objects.create(
                         conversation=conv,
                         sender=random.choice([u1, u2]),
-                        content=random.choice(samples),
+                        content=random.choice(direct_samples),
+                        is_read=random.choice([True, False]),
                     )
                     conv.updated_at = getattr(msg, "created_at", timezone.now())
 
                 conv.save()
+
                 conv_map[u1.id].append(conv)
                 conv_map[u2.id].append(conv)
+
+        # ===== GROUP CHAT =====
+        group_titles = [
+            "Nhóm đồ án Flutter 01",
+            "Nhóm PTUD Mobile",
+            "Nhóm ôn tập CSDL",
+            "Team backend Django",
+            "Nhóm báo cáo AI",
+            "Nhóm học CNPM",
+            "Nhóm chia sẻ tài liệu DSA",
+            "Team app chat PTIT",
+            "Nhóm học Database",
+            "Nhóm học tối PTIT",
+        ]
+
+        created_groups = 0
+        max_groups = 18
+
+        for owner in users[:]:
+            if created_groups >= max_groups:
+                break
+
+            friend_ids = list(friend_map[owner.id])
+            if len(friend_ids) < 2:
+                continue
+
+            member_count = random.randint(3, 6)
+            chosen_friend_ids = random.sample(
+                friend_ids,
+                k=min(member_count - 1, len(friend_ids)),
+            )
+            member_users = [owner] + [User.objects.get(id=fid) for fid in chosen_friend_ids]
+
+            conv = Conversation.objects.create(
+                title=random.choice(group_titles),
+                is_group=True,
+                created_by=owner,
+                owner=owner,
+                is_active=True,
+            )
+
+            for idx, member in enumerate(member_users):
+                ConversationParticipant.objects.create(
+                    conversation=conv,
+                    user=member,
+                    role="owner" if idx == 0 else "member",
+                    status="active",
+                )
+
+            total_messages = random.randint(25, 45)
+            for _ in range(total_messages):
+                sender = random.choice(member_users)
+                msg = Message.objects.create(
+                    conversation=conv,
+                    sender=sender,
+                    content=random.choice(group_samples),
+                    is_read=random.choice([True, False]),
+                )
+                conv.updated_at = getattr(msg, "created_at", timezone.now())
+
+            conv.save()
+
+            for member in member_users:
+                conv_map[member.id].append(conv)
+
+            created_groups += 1
 
         return conv_map
 
@@ -337,14 +453,29 @@ class Command(BaseCommand):
                 )
                 count += 1
 
-            for conv in conv_map[u.id][:5]:
-                other = conv.user2 if conv.user1_id == u.id else conv.user1
+            for conv in conv_map[u.id][:8]:
+                participants = list(
+                    conv.participants.select_related("user").exclude(user=u)
+                )
+
+                if conv.is_group:
+                    title = "Tin nhắn nhóm mới"
+                    content = f"Có hoạt động mới trong nhóm '{conv.title or 'Nhóm chat'}'."
+                    target_username = participants[0].user.username if participants else ""
+                else:
+                    other = participants[0].user if participants else None
+                    if other is None:
+                        continue
+                    title = "Tin nhắn mới"
+                    content = f"{other.username} đã gửi tin nhắn cho bạn."
+                    target_username = other.username
+
                 Notification.objects.create(
                     user=u,
-                    title="Tin nhắn mới",
-                    content=f"{other.username} đã gửi tin nhắn cho bạn.",
+                    title=title,
+                    content=content,
                     notification_type="message",
-                    target_username=other.username,
+                    target_username=target_username,
                     conversation_id=conv.id,
                     is_read=False,
                 )
@@ -380,6 +511,95 @@ class Command(BaseCommand):
                 SavedPost.objects.get_or_create(post=p, user=u)
 
         return posts
+
+    def create_notifications(self, users, friend_map, pending_in, conv_map, posts):
+        for user in users:
+            for sender_id in list(pending_in[user.id])[:4]:
+                sender = User.objects.get(id=sender_id)
+                Notification.objects.create(
+                    user=user,
+                    title="Lời mời kết bạn mới",
+                    content=f"{sender.username} đã gửi lời mời kết bạn cho bạn.",
+                    notification_type="friend_request",
+                    target_username=sender.username,
+                    is_read=False,
+                )
+
+            for friend_id in list(friend_map[user.id])[:4]:
+                friend = User.objects.get(id=friend_id)
+                Notification.objects.create(
+                    user=user,
+                    title="Kết bạn thành công",
+                    content=f"Bạn và {friend.username} hiện đã là bạn bè.",
+                    notification_type="friend_accept",
+                    target_username=friend.username,
+                    is_read=False,
+                )
+
+            for conv in conv_map[user.id][:6]:
+                participants = list(
+                    conv.participants.select_related("user").exclude(user=user)
+                )
+
+                if conv.is_group:
+                    title = "Tin nhắn nhóm mới"
+                    content = f"Có hoạt động mới trong nhóm '{conv.title or 'Nhóm chat'}'."
+                    target_username = participants[0].user.username if participants else ""
+                else:
+                    other = participants[0].user if participants else None
+                    if other is None:
+                        continue
+                    title = "Tin nhắn mới"
+                    content = f"{other.username} đã gửi tin nhắn cho bạn."
+                    target_username = other.username
+
+                Notification.objects.create(
+                    user=user,
+                    title=title,
+                    content=content,
+                    notification_type="message",
+                    target_username=target_username,
+                    conversation_id=conv.id,
+                    is_read=False,
+                )
+
+            visible_posts = [post for post in posts if post.author_id != user.id]
+            random.shuffle(visible_posts)
+
+            for post in visible_posts[:4]:
+                liker = (
+                    PostLike.objects.filter(post=post)
+                    .exclude(user=user)
+                    .select_related("user")
+                    .first()
+                )
+                if liker:
+                    Notification.objects.create(
+                        user=user,
+                        title="Bài viết được thả tim",
+                        content=f"{liker.user.username} đã thả tim bài viết '{post.title}'.",
+                        notification_type="post_like",
+                        target_username=liker.user.username,
+                        post_id=post.id,
+                        is_read=False,
+                    )
+
+                comment = (
+                    Comment.objects.filter(post=post)
+                    .exclude(author=user)
+                    .select_related("author")
+                    .first()
+                )
+                if comment:
+                    Notification.objects.create(
+                        user=user,
+                        title="Bài viết có bình luận mới",
+                        content=f"{comment.author.username} đã bình luận vào bài viết '{post.title}'.",
+                        notification_type="post_comment",
+                        target_username=comment.author.username,
+                        post_id=post.id,
+                        is_read=False,
+                    )
 
     def seed_documents(self, users):
         for i in range(30):

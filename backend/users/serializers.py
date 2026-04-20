@@ -1,10 +1,9 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import FriendRequest, Profile
-
-from rest_framework import serializers
-from users.models import Profile
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -21,6 +20,36 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=validated_data["password"],
         )
 
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    username_field = "email"
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        fields = ["email", "password"]
+
+    def validate(self, attrs):
+        email = (attrs.get("email") or "").strip().lower()
+        password = attrs.get("password") or ""
+
+        user = User.objects.filter(email__iexact=email).first()
+        if user is None or not user.check_password(password):
+            raise AuthenticationFailed("No active account found with the given credentials")
+
+        refresh = self.get_token(user)
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        return {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "username": user.username,
+            "email": user.email,
+            "full_name": (profile.full_name if profile else "") or user.username,
+        }
 
 
 class ProfileSerializer(serializers.ModelSerializer):
