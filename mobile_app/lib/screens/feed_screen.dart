@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mobile_app/core/app_api.dart';
 import 'package:mobile_app/core/avatar_utils.dart';
 import 'package:mobile_app/core/app_session.dart';
 import 'package:mobile_app/screens/feed_detail_screen.dart';
@@ -23,11 +24,13 @@ class _FeedScreenState extends State<FeedScreen> {
     _futureItems = _fetchFeed();
   }
 
+  // Gọi API Django để lấy tin PTIT đã được chuẩn hóa thay vì gọi RSS trực tiếp
+  // từ Flutter. Backend chịu trách nhiệm phân tích dữ liệu và xử lý phương án dự phòng khi lỗi mạng.
   Future<List<FeedItem>> _fetchFeed() async {
     final uri = Uri.parse(
-      'http://127.0.0.1:8000/api/community/auto-feed/?limit=15',
+      '${AppApi.community}/auto-feed/?limit=15',
     );
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: AppSession.authHeaders());
     if (response.statusCode != 200) {
       throw Exception('Khong tai duoc feed');
     }
